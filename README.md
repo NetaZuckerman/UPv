@@ -45,7 +45,13 @@ This step fill the identity column in QC/report.csv file by counting the mutatio
 Run the pipeline for influenza viruses. \
 The reference should contain the virus segments seperated by fasta headers. \
  `python3 upv.py  -r path/to/influenza_ref.fa -i path/to/fastq/location --flu `
- 
+
+#### --HIV (optional)
+Run the pipeline for HIV analysis. \
+NO NEED TO PROVIDE REFERENCE SEQUENCE. \
+This analysis considers only the genes: PR, RT and Integrase. their reference is in the pipeline. \
+ `python3 upv.py -i path/to/fastq/location --HIV `
+
 #### --polio (optional)
 Run the pipeline for polio virus. \
 The reference should contain the 3 Sabins seperated by fasta headers. \
