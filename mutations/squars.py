@@ -60,9 +60,9 @@ def mutations(sequences, start, end, names, title):
 if __name__ == "__main__":
     alignment_path = sys.argv[1]
     title = sys.argv[2]
+    ref = False
+    
     sequences = get_sequences(alignment_path)
-    
-    
     
     for sample, seq in sequences.items():
         sequences[sample] = list(seq)
