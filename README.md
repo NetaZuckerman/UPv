@@ -38,8 +38,13 @@ The results are the parsed gb file and the mutations report. \
  `python3 upv.py -i /input/path -r path/to/ref.fa -gb path/to/file.gb --mutation_table --mini`
 
 #### -v|--vcf (optional)
-Generate a variant calling file using gatk4. \
-This step fill the identity column in QC/report.csv file by counting the mutations in the vcf.
+Generate a variant calling file and inteperate it to a csv file. \
+
+#### --cnsThresh (optional)
+Change the CNS depth minimum threshold. defualt is 0.6.\
+
+#### -mr|--multi_ref (optional)
+Analyse multiple reference. when adding this flag, provide a multi-fasta reference to the -r flag.\
 
 #### --flu (optional)
 Run the pipeline for influenza viruses. \
@@ -64,6 +69,15 @@ Run CMV resistance mutations analysis in addition to the regular pipeline . \
 This part was developed for human Herpes virus 5 reference - NC_006273.2. \
 The output "cmv_resistance.txt" is a report containing the resistance mutations of each sample if exist. \
  `python3 upv.py  -r path/to/NC_006273.2.fa -i path/to/fastq/location --CMV `
+
+#### --HIV (optional)
+Run HIV analysis in addition to the regular pipeline . \
+No need to insert a reference sequence, the reference used is the genes: PR, RT, Int. \
+The consensus algorithm:  \
+* generate VCF file \
+* count bases depth \
+* determine consensus nucleotide for the 2 nucleotides with the highest depth > 20% \  
+ `python3 upv.py  -i path/to/fastq/location --HIV `
 
  
 ## Main Steps:
