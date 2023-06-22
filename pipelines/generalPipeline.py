@@ -15,7 +15,6 @@ from statistics import mean
 import csv
 from utils import utils
 import pandas as pd
-from math import floor
 
 
 #alignment conmmands
@@ -29,7 +28,7 @@ CNS = "samtools mpileup -A %(bam_path)s%(bam_file)s | ivar consensus -t %(cnsThr
 CNS5 = "samtools mpileup -A %(bam_path)s%(bam_file)s | ivar consensus -t %(cnsThresh)s -m 5 -p %(cns5_path)s%(sample)s.fa"
 SAMTOOLS_INDEX = "samtools index -@ 16 %(bam_path)s%(bam_file)s"
 #variants
-VARIANTS = os.path.dirname(__file__)+"/variant_calling.sh %(bam_path)s %(vcf_path)s %(reference)s"
+VCF = "bcftools mpileup -d 8000 --skip-indels -f %(ref)s %(bam)s -a AD,DP | sed '/^#/d' > %(vcf)s"
 
 
 #MAFFT commands
@@ -72,10 +71,6 @@ class general_pipe():
     
     def variant_calling(self, bam_path = "BAM/", vcf_path= "VCF/"):
         '''
-        use GATK to generate vcf file. 
-        summerize the mutations to a table using gatks parser.
-        write identity.txt file that contains calculations of the identity precent calculated by counting the mutations.
-        for now - this function is used only to calculate the identity between the sample to the reference seq.
 
         Parameters
         ----------
@@ -85,25 +80,54 @@ class general_pipe():
             The default is "VCF/".
 
         '''
-        subprocess.call(VARIANTS % dict(bam_path=bam_path, vcf_path=vcf_path, reference=self.reference), shell=True)
-        ref = utils.get_sequences(self.reference)
-        identity_precent={}
-
-        for table in os.listdir(vcf_path):
-            if table.endswith("table"):
-                sample = table.split(".table")[0]
-                vcf_sum = pd.read_csv(vcf_path+table, sep='\t')
-                sample_mut_count = len(vcf_sum) #count the mutation number in the table file
-                if sample_mut_count:
-                    ref_len = len(ref[vcf_sum.at[0,"CHROM"]]) #get the current vcf reference sequence lentgh. i have each virus in seperated VCF file (becuase i splitted the bams)
-                    identity_precent[sample] = floor(100 - (sample_mut_count / ref_len * 100))
-                else: 
-                    identity_precent[sample] = 100
-                    
-        with open(vcf_path +"identity.txt",'w') as f:
-            for key, value in identity_precent.items(): 
-                f.write('%s\t%s\n' % (key, value))
         
+        
+        for bam in os.listdir(bam_path):
+            if "REF" in bam:
+                sample = bam.split(".bam")[0].replace(".mapped.sorted", "")
+                vcf_file = vcf_path + sample + ".vcf"
+                subprocess.call(VCF % dict(bam=bam_path + bam, ref=self.reference, vcf= vcf_file ), shell=True) 
+                vcf = pd.read_csv(vcf_file, sep='\t', names=["ref_id",	"pos",	"id",	"ref",	"alt",	"qual"	,"filter",	"info"	,"format", "details"])
+                #process alt nucleotides accurance
+                alts = vcf["alt"].str.split(",",expand=True)
+                cols = ["alt" + str(x) for x in alts.columns]
+                alts.set_axis(cols, axis=1,inplace=True)
+                vcf = pd.concat([vcf, alts], axis=1)
+                
+                #process each nucleotide depth
+                depths = vcf["details"].str.split(":",expand=True)[2].str.split(",",expand=True)
+                cols = ["depth" + str(x) for x in depths.columns]
+                depths.set_axis(cols, axis=1,inplace=True)
+                vcf = pd.concat([vcf, depths], axis=1)
+
+                #get A G C T counts
+                final_df = pd.DataFrame(columns=["position", "ref", "A",  "G", "C", "T"])
+                for i, row in vcf.iterrows():
+                    counts = {"position":row["pos"],
+                     "ref": row["ref"],
+                        row["ref"]:row["depth0"],
+                     row["alt0"]: row["depth1"],
+                     row["alt1"]: row["depth2"],
+                     row["alt2"]: row["depth3"]}
+                    if "<*>" in counts.keys():
+                        counts.pop("<*>")
+                    if None in counts.keys():
+                        counts.pop(None)
+                    
+                    counts = pd.DataFrame(data = counts, index=[0])
+                    final_df = pd.concat([final_df,counts], axis = 0)
+                    final_df = final_df.fillna(0)
+                    
+                #calc the frequencies
+                final_df[["A","G","C","T"]] = final_df[["A","G","C","T"]].astype(int)
+                final_df["depth"] = final_df["A"] + final_df["G"] +  final_df["C"] + final_df["T"]
+                final_df["%A"] = round(final_df["A"]/final_df["depth"]*100)
+                final_df["%G"] = round(final_df["G"]/final_df["depth"]*100)
+                final_df["%C"] = round(final_df["C"]/final_df["depth"]*100)
+                final_df["%T"] = round(final_df["T"]/final_df["depth"]*100)
+                
+                final_df.to_csv(vcf_path + sample + ".csv", index = False)
+                
     #find mapping depth and consensus sequence 
     def cns_depth(self, bam_path, depth_path, cns_path, cns5_path, cnsThresh):
         '''
@@ -131,17 +155,14 @@ class general_pipe():
     
     #write report.csv - mapping analysis
     #de novo flag was created to generate different output for de novo analysis, used in denovo class and polio class.
-    def results_report(self, bam_path, depth_path, output_report, vcf=0):
-        if vcf:
-            vcf_path = bam_path.replace("BAM","VCF")
-            identity_table = pd.read_csv(vcf_path+"identity.txt", sep='\t', header=None)
+    def results_report(self, bam_path, depth_path, output_report):
         f = open(output_report+".csv", 'w')
         writer = csv.writer(f)
-        writer.writerow(['sample', 'mapped%','mapped_reads','total_reads','cov_bases','coverage%','coverage_CNS_5%', 'identity', 'mean_depth','max_depth','min_depth'])
+        writer.writerow(['sample', 'mapped%','mapped_reads','total_reads','cov_bases','coverage%','coverage_CNS_5%', 'mean_depth','max_depth','min_depth'])
         
         for bam_file in os.listdir(bam_path):
                 if "sorted" in bam_file and "bai" not in bam_file:
-                    subprocess.call(SAMTOOLS_INDEX % dict(bam_path=bam_path, bam_file=bam_file.split(".mapped")[0]+".bam"), shell=True) 
+                    # subprocess.call(SAMTOOLS_INDEX % dict(bam_path=bam_path, bam_file=bam_file.split(".mapped")[0]+".bam"), shell=True) #to fix
                     total_reads = pysam.AlignmentFile(bam_path+bam_file.split(".mapped")[0]+".bam").count(until_eof=True) #need to fix 
                     coverage_stats = pysam.coverage(bam_path+bam_file).split("\t")
                     mapped_reads = int(coverage_stats[11])
@@ -160,45 +181,9 @@ class general_pipe():
                     breadth_cns5 = len([i for i in depths if i > 5])
                     genome_size = sum(1 for line in open(depth_path+sample+".txt"))
                     coverage_cns5 = round(breadth_cns5 / genome_size * 100,3)  if genome_size else ''
-                    
-                    identity = identity_table.loc[identity_table[0] == sample, 1].iloc[0] if vcf else ''
-                    
-                    writer.writerow([sample, mapped_percentage, mapped_reads, total_reads, cov_bases, coverage, coverage_cns5, identity, mean_depth, max_depth, min_depth])
+                                        
+                    writer.writerow([sample, mapped_percentage, mapped_reads, total_reads, cov_bases, coverage, coverage_cns5, mean_depth, max_depth, min_depth])
                 
         f.close()
         
-        
-        def results_report_de_novo(self, bam_path, depth_path, output_report, vcf=0):
-            if vcf:
-                vcf_path = bam_path.replace("BAM","VCF")
-                identity_table = pd.read_csv(vcf_path+"identity.txt", sep='\t', header=None)
-            f = open(output_report+".csv", 'w')
-            writer = csv.writer(f)
-            writer.writerow(['sample', 'reference', 'mapped%','mapped_reads','total_reads','cov_bases','coverage%', 'identity','mean_depth','max_depth','min_depth'])
-            for bam_file in os.listdir(bam_path):
-                    if "sorted" in bam_file and "bai" not in bam_file:
-                        subprocess.call(SAMTOOLS_INDEX % dict(bam_path=bam_path, bam_file=bam_file), shell=True) 
-                        total_reads = pysam.AlignmentFile(bam_path+bam_file.split(".mapped")[0]+".bam").count(until_eof=True) #need to fix 
-                        coverage_stats = pysam.coverage(bam_path+bam_file).split("\t")
-                        mapped_reads = int(coverage_stats[11])
-                        mapped_percentage = round(mapped_reads/total_reads*100,4) if total_reads else ''
-                        cov_bases =  int(coverage_stats[12])
-                        coverage = float(coverage_stats[13])
-                
-                        #depth 
-                        sample = bam_file.split(".mapped")[0] + bam_file.split(".sorted")[1].split(".bam")[0]
-                        depths = [int(x.split('\t')[2]) for x in open(depth_path+sample+".txt").readlines()]
-                        depths = [i for i in depths if i != 0]
-                        mean_depth = str(round(mean(depths),3)) if depths else ''
-                        min_depth = min(depths) if depths else ''
-                        max_depth = max(depths) if depths else ''
-                        
-                        identity = identity_table.loc[identity_table[0] == sample, 1].iloc[0] if vcf else ''
-                        
-                        f=open("fasta/selected_references/"+sample+".fasta")
-                        reference = f.readline().split("man ")[1].split("strain")[0]
-                        f.close()
-                        writer.writerow([sample, reference, mapped_percentage, mapped_reads, total_reads, cov_bases, coverage, identity, mean_depth, max_depth, min_depth])
-                        
-                    
-            f.close()
+

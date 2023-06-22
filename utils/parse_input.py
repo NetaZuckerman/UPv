@@ -24,8 +24,8 @@ def parser():
         parser.add_argument('-rg','--regions_file' ,help='insert gene regions file for mini')
         parser.add_argument('--mini' , action='store_true',help='run only mutation analysis. this flag requires --input flag as alignment file.')
         parser.add_argument('--skip_spades' , action='store_true',help='skip spades analysis used in polio and de novo classes. turn on this flag only if you already run spades once')
-        parser.add_argument('-v','--vcf' , action='store_true',help='generates vcf files using gatk4. fill the identity column in the report file')
-        parser.add_argument('--cnsThresh' ,help='Minimum frequency threshold(0 - 1) to call consensus. (Default: 0.6)', default=0.6)
+        parser.add_argument('-v','--vcf' , action='store_true',help='generates vcf files.')
+        parser.add_argument('--cnsThresh' ,help='Minimum frequency threshold(0 - 1) to call consensus. (Default: 0.6)') #defualt is set in the main script (upy.py)
         args = parser.parse_args()
         return args.reference, args.input, args.flu, args.de_novo, args.polio, args.cmv, args.HIV, \
                    int(args.process), args.gb_file, args.regions_file, args.mutations_table, \
