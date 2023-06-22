@@ -73,11 +73,12 @@ The output "cmv_resistance.txt" is a report containing the resistance mutations 
 #### --HIV (optional)
 Run HIV analysis in addition to the regular pipeline . \
 No need to insert a reference sequence, the reference used is the genes: PR, RT, Int. \
-The consensus algorithm:  \
-* generate VCF file \
-* count bases depth \
-* determine consensus nucleotide for the 2 nucleotides with the highest depth > 20% \  
- `python3 upv.py  -i path/to/fastq/location --HIV `
+The consensus algorithm:
+* generate VCF file 
+* count bases depth 
+* determine consensus nucleotide for the 2 nucleotides with the highest depth > 20%
+\
+`python3 upv.py  -i path/to/fastq/location --HIV `
 
  
 ## Main Steps:
