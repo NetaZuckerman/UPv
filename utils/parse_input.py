@@ -17,7 +17,7 @@ def parser():
         parser.add_argument('-f', '--flu', action='store_true', help="influenza segements analysis") #store_true will store the argument as true
         parser.add_argument('-d', '--de_novo', action='store_true', help="de-novo analysis") #store_true will store the argument as true
         parser.add_argument('--polio', action='store_true', help="PolioVirus analysis") #store_true will store the argument as true
-        parser.add_argument('--HIV', action='store_true', help="HIV analysis for genes: PR, RT and Integrase. do not provide reference sequnce") #store_true will store the argument as true
+        parser.add_argument('--HIV', help="HIV analysis for genes: PR, RT and Integrase. do not provide reference sequnce. provide format table.") #store_true will store the argument as true
         parser.add_argument('-c', '--cmv', action='store_true', help="cetomegalovirus (human herpesvirus 5) analysis") #store_true will store the argument as true
         parser.add_argument('-gb','--gb_file' ,help='insert gb file and get reference regions report')
         parser.add_argument('-m','--mutations_table' , action='store_true',help='mutations table reprort. gb file flag is mandatory')

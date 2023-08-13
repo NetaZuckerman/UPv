@@ -195,11 +195,11 @@ def get_single_aa(seq, position, region):
         
         mod = pos_on_gene % 3
         if mod == 0:  # third nuc on the codon
-            codon_pos = (position -2 , position - 1, position)
+            codon_pos = (position, position + 1, position + 2)
         if mod == 1:  # first nuc on the codon
-            codon_pos = (position , position + 1, position + 2)
+            codon_pos = (position -1 , position, position + 1)
         if mod == 2:  # second nuc on the codon
-            codon_pos = (position - 1, position, position + 1)
+            codon_pos = (position - 2, position -1, position)
             
         codon = seq[codon_pos[0]] + seq[codon_pos[1]] + seq[codon_pos[2]]
     
@@ -208,7 +208,6 @@ def get_single_aa(seq, position, region):
     else:
         aa = 'X'
     return aa
-
 
 def get_all_aa(mutations_positions_nt, sequences, gene_names, regions):
     '''
@@ -243,7 +242,7 @@ def get_all_aa(mutations_positions_nt, sequences, gene_names, regions):
     return mutations_by_sample_aa
     
 def run(alignment_file,regions_csv,output,polio = False):
-        
+    show_all = False
     
     '''
     run all functions.
@@ -251,7 +250,11 @@ def run(alignment_file,regions_csv,output,polio = False):
     '''
     
     sequences = get_sequences(alignment_file)
-    mutations_positions_nt = mutations_positions(sequences)
+    if show_all:
+        seq_len= len(list(sequences.values())[0])
+        mutations_positions_nt = range(0, seq_len, 1)
+    else:
+        mutations_positions_nt = mutations_positions(sequences)
     mutations_by_sample_nt = mutations_by_sample(mutations_positions_nt,sequences)
     regions = get_regions(regions_csv)
     gene_names, position_on_gene_nt, position_on_gene_aa = get_gene(mutations_positions_nt, regions)
@@ -262,7 +265,7 @@ def run(alignment_file,regions_csv,output,polio = False):
     
     df = pd.DataFrame()
     df["gene_name"] = gene_names
-    df["nt_position_on_gene"] = position_on_gene_nt
+    df["nt_position_on_gene"] = position_on_gene_nt 
     df["nt_position_on_genome"] = mutations_positions_nt
     #df["posision_on_p1"] = mutations_positions_nt - 749 if polio else ""
     df["nt_position_on_genome"] += 1

@@ -89,7 +89,7 @@ def mutations_positions(sequences, no_n = 1):
             if not temp:
                 temp = record[pos]
             if no_n and (record[pos] in ["N"] or record[pos] in ["-"]) :
-                break
+                continue
             if not temp == record[pos] :
                 mutations_positons.append(pos)
                 break

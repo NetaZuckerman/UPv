@@ -24,7 +24,7 @@ def dist_mat(sequences):
 
 def squars(distmat, title, names):
     plt.clf()
-    plt.figure(figsize=(9, 8))
+    plt.figure(figsize=(25, 20))
     res=sns.heatmap(distmat, cmap="YlGnBu", yticklabels=names, xticklabels=names)
     res.set_yticklabels(res.get_ymajorticklabels(), fontsize = 6)
     res.set_xticklabels(res.get_xmajorticklabels(), fontsize = 6)
@@ -73,6 +73,12 @@ if __name__ == "__main__":
     mutations(sequences, 0, seq_length, sequences.keys(),title + " mutations")
 
 
+#to sort the distance mut:
+# for col in data.columns:
+#     data = data.sort_values(by = col)
+    
+# final = pd.DataFrame()
 
-
+# for index in data.index:
+#     final[index] = data[index]
 

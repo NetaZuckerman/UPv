@@ -28,12 +28,12 @@ if __name__ == "__main__":
         process, gb_file, regions_file, mutations_flag, mini, \
             skip_spades, vcf, cnsThresh, multi_ref_flag = parse_input.parser()
     
-    dirs=['BAM','QC','CNS','CNS_5','QC/depth'] if not hiv_flag else ['BAM','QC','CNS','QC/depth']
+    dirs=['BAM','QC','CNS','CNS_5','QC/depth'] if not hiv_flag else ['BAM','QC','CNS','QC/depth', 'alignment']
     
     if not mini:      
         utils.create_dirs(dirs) 
         if hiv_flag:
-            reference = SCRIPT_PATH + "/viruses/refs/HIV_genes_rt_trimmed.fasta"
+            reference = SCRIPT_PATH + "/viruses/refs/K03455.1_HIV.fasta"
             vcf = True
         elif not reference:
             raise ValueError("reference sequence is required.")
@@ -41,7 +41,7 @@ if __name__ == "__main__":
     if not cnsThresh:
         cnsThresh = 0.6
     
-    multi_ref_flag = True if flu_flag or hiv_flag else False
+    multi_ref_flag = True if multi_ref_flag or flu_flag else False
 
     if fastq and reference and not mini:
         if not fastq.endswith("/"):
@@ -99,16 +99,22 @@ if __name__ == "__main__":
             utils.split_bam("BAM/")
         
         
-        if flu_flag:
-            pipe.concat_samples()
-            pipe.concat_segments()
-        
+
         if vcf:
             utils.create_dirs(["VCF"])
             pipe.variant_calling()
             
         pipe.cns_depth("BAM/","QC/depth/","CNS/","CNS_5/", cnsThresh) #temp comment
         
+        
+        if flu_flag:
+            pipe.concat_samples()
+            pipe.concat_segments()
+        
+        if hiv_flag:
+            pipe.cut_to_gene("CNS/", "alignment/")
+            pipe.excel_fasta("CNS/",hiv_flag)
+            
         pipe.results_report("BAM/", "QC/depth/", 'QC/report') #temp comment
         
     if cmv_flag or (mutations_flag and not mini):  # TODO - fix flu - im not sure this aligner fits
@@ -119,8 +125,7 @@ if __name__ == "__main__":
         utils.create_dirs(['alignment'])
         pipe.mafft()
                 
-    if hiv_flag:
-        pipe.excel_fasta("CNS/")
+    
 
     if gb_file:
         parse_gb_file.parse(gb_file)

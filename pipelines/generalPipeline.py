@@ -83,19 +83,27 @@ class general_pipe():
         
         
         for bam in os.listdir(bam_path):
-            if "REF" in bam:
+            if "sorted" in bam:
                 sample = bam.split(".bam")[0].replace(".mapped.sorted", "")
                 vcf_file = vcf_path + sample + ".vcf"
                 subprocess.call(VCF % dict(bam=bam_path + bam, ref=self.reference, vcf= vcf_file ), shell=True) 
                 vcf = pd.read_csv(vcf_file, sep='\t', names=["ref_id",	"pos",	"id",	"ref",	"alt",	"qual"	,"filter",	"info"	,"format", "details"])
                 #process alt nucleotides accurance
                 alts = vcf["alt"].str.split(",",expand=True)
+                # add column if not exist
+                if 2 not in alts.columns:
+                    alts[2] = None
                 cols = ["alt" + str(x) for x in alts.columns]
                 alts.set_axis(cols, axis=1,inplace=True)
                 vcf = pd.concat([vcf, alts], axis=1)
                 
                 #process each nucleotide depth
                 depths = vcf["details"].str.split(":",expand=True)[2].str.split(",",expand=True)
+                # add column if not exist
+                if 3 not in depths.columns:
+                    depths[3] = None
+                
+                
                 cols = ["depth" + str(x) for x in depths.columns]
                 depths.set_axis(cols, axis=1,inplace=True)
                 vcf = pd.concat([vcf, depths], axis=1)
@@ -163,6 +171,7 @@ class general_pipe():
         for bam_file in os.listdir(bam_path):
                 if "sorted" in bam_file and "bai" not in bam_file:
                     # subprocess.call(SAMTOOLS_INDEX % dict(bam_path=bam_path, bam_file=bam_file.split(".mapped")[0]+".bam"), shell=True) #to fix
+                    sample = bam_file.split(".mapped")[0] + bam_file.split(".sorted")[1].split(".bam")[0]
                     total_reads = pysam.AlignmentFile(bam_path+bam_file.split(".mapped")[0]+".bam").count(until_eof=True) #need to fix 
                     coverage_stats = pysam.coverage(bam_path+bam_file).split("\t")
                     mapped_reads = int(coverage_stats[11])
@@ -171,7 +180,6 @@ class general_pipe():
                     coverage = float(coverage_stats[13])
             
                     #depth 
-                    sample = bam_file.split(".mapped")[0] + bam_file.split(".sorted")[1].split(".bam")[0]
                     depths = [int(x.split('\t')[2]) for x in open(depth_path+sample+".txt").readlines()]
                     depths = [i for i in depths if i != 0]
                     mean_depth = str(round(mean(depths),3)) if depths else ''
