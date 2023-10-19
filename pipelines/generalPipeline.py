@@ -21,8 +21,9 @@ import pandas as pd
 INDEX = "bwa index %(reference)s"
 #BWM_MEM = "bwa mem -v1 -t 16 %(reference)s %(r1)s | samtools view -@ 16 -b - > %(output_path)s%(sample)s.bam"
 BWM_MEM = "bwa mem -v1 -t 16 %(reference)s %(r1)s %(r2)s | samtools view -@ 16 -b - > %(output_path)s%(sample)s.bam"
-MAPPED_BAM = "samtools view -@ 16 -b -F 4 %(output_path)s%(sample)s.bam > %(output_path)s%(sample)s.mapped.bam"
+FILTER_BAM = "samtools view -@ 16 -b -F %(filter_out_code)s %(output_path)s%(sample)s.bam > %(output_path)s%(sample)s.mapped.bam"
 SORT = "samtools sort -@ 14 %(output_path)s%(sample)s.mapped.bam -o %(output_path)s%(sample)s.mapped.sorted.bam"
+CHIMER = "samtools view %(output_path)s%(sample)s.bam |  grep 'SA:' > %(output_path)s%(sample)s.chimeric_reads.txt"
 DEPTH = "samtools depth -a %(bam_path)s%(bam_file)s > %(depth_path)s%(sample)s.txt"
 CNS = "samtools mpileup -A %(bam_path)s%(bam_file)s | ivar consensus -t %(cnsThresh)s -m 1 -p %(cns_path)s%(sample)s.fa"
 CNS5 = "samtools mpileup -A %(bam_path)s%(bam_file)s | ivar consensus -t %(cnsThresh)s -m 5 -p %(cns5_path)s%(sample)s.fa"
@@ -49,7 +50,7 @@ class general_pipe():
         subprocess.call(INDEX % dict(reference=self.reference), shell=True)
 
 
-    def bam(self, sample_r1_r2):
+    def bam(self, treads):
         '''
         generate bam file from paired-end fastq (R1,R2).
         generate filtered file with mapped reads.
@@ -61,14 +62,15 @@ class general_pipe():
             [sample, r1 fastq path, r2 fastq path].
 
         '''
-        sample = sample_r1_r2[0]
-        r1= sample_r1_r2[1]
-        r2 = sample_r1_r2[2]            
-        #subprocess.call(BWM_MEM % dict(reference=self.reference,r1=self.fastq + r2, sample=sample, output_path="BAM/"), shell=True) #map to reference
-        subprocess.call(BWM_MEM % dict(reference=self.reference,r1=self.fastq + r1, r2=self.fastq + r2, sample=sample, output_path="BAM/"), shell=True) #map to reference
-        subprocess.call(MAPPED_BAM % dict(sample=sample, output_path="BAM/"), shell=True) #keep mapped reads
-        subprocess.call(SORT % dict(sample=sample, output_path="BAM/"), shell=True)         
-    
+        filter_out_code = 2052
+         
+        for sample, r1, r2 in self.r1r2_list:
+            subprocess.call(BWM_MEM % dict(reference=self.reference,r1=self.fastq + r1, r2=self.fastq + r2, sample=sample, output_path="BAM/"), shell=True) #map to reference
+            subprocess.call(FILTER_BAM % dict(sample=sample, filter_out_code = filter_out_code, output_path="BAM/"), shell=True) #keep reads according to the filter code: https://broadinstitute.github.io/picard/explain-flags.html
+            subprocess.call(SORT % dict(sample=sample, output_path="BAM/"), shell=True)         
+            #chimeric reads: find reads that where mapped to more then one region in the genome
+            subprocess.call(CHIMER % dict(sample=sample, output_path="BAM/"), shell=True)
+        
     def variant_calling(self, bam_path = "BAM/", vcf_path= "VCF/"):
         '''
 
@@ -151,7 +153,8 @@ class general_pipe():
                 #remove qual files
                 os.remove(cns_path+sample+".qual.txt")
                 os.remove(cns5_path+sample+".qual.txt")
-
+                utils.fix_cns_header("CNS/")
+                utils.fix_cns_header("CNS_5/")
     def mafft(self):
         '''
         multi-fasta align.
@@ -163,35 +166,64 @@ class general_pipe():
     
     #write report.csv - mapping analysis
     #de novo flag was created to generate different output for de novo analysis, used in denovo class and polio class.
-    def results_report(self, bam_path, depth_path, output_report):
+
+    def depth(self, file, start=0, end=-1):
+        depths = [int(x.split('\t')[2]) for x in open(file).readlines()]
+        
+        #set
+        if end == -1:
+            genome_size = len(depths)   
+        else:
+            depths = depths[start:end]
+            genome_size = end-start
+        #calculate depths
+        depths = [i for i in depths if i != 0]
+        if not depths:
+            return '','','','',''
+        max_depth = max(depths)
+        min_depth = min(depths)
+        mean_depth = str(round(mean(depths),3))
+        coverage = round(len(depths) / genome_size * 100,3)  if genome_size else ''
+        
+        #cns 5: position with depth > 5
+        breadth_cns5 = len([i for i in depths if i > 5])
+        cns5_cover = round(breadth_cns5 / genome_size * 100,3)  if genome_size else ''
+        
+        return max_depth, min_depth,mean_depth, coverage, cns5_cover
+    
+    def chimer_count(self,file_name):
+        #count chimeric reads
+        with open(file_name) as f:
+            chimer_count = len(f.readlines())
+        return chimer_count
+    
+    def general_qc(self, bam_file):
+        total_reads = pysam.AlignmentFile(bam_file.split(".mapped")[0]+".bam").count(until_eof=True) 
+        coverage_stats = pysam.coverage(bam_file).split("\t")
+        mapped_reads = int(coverage_stats[11])
+        mapped_percentage = round(mapped_reads/total_reads*100,4) if total_reads else ''
+        cov_bases =  int(coverage_stats[12])
+        chimer_count = self.chimer_count(bam_file.split(".mapped")[0].split(".REF")[0] + ".chimeric_reads.txt")
+        
+        return total_reads, mapped_reads, mapped_percentage, cov_bases, chimer_count
+        
+    def qc_report(self, bam_path, depth_path, output_report):
         f = open(output_report+".csv", 'w')
         writer = csv.writer(f)
-        writer.writerow(['sample', 'mapped%','mapped_reads','total_reads','cov_bases','coverage%','coverage_CNS_5%', 'mean_depth','max_depth','min_depth'])
+        writer.writerow(['sample', 'mapped%','mapped_reads','total_reads','cov_bases','coverage%','coverage_CNS_5%', 'mean_depth','max_depth','min_depth', 'chimeric_read_count'])
         
         for bam_file in os.listdir(bam_path):
                 if "sorted" in bam_file and "bai" not in bam_file:
-                    # subprocess.call(SAMTOOLS_INDEX % dict(bam_path=bam_path, bam_file=bam_file.split(".mapped")[0]+".bam"), shell=True) #to fix
                     sample = bam_file.split(".mapped")[0] + bam_file.split(".sorted")[1].split(".bam")[0]
-                    total_reads = pysam.AlignmentFile(bam_path+bam_file.split(".mapped")[0]+".bam").count(until_eof=True) #need to fix 
-                    coverage_stats = pysam.coverage(bam_path+bam_file).split("\t")
-                    mapped_reads = int(coverage_stats[11])
-                    mapped_percentage = round(mapped_reads/total_reads*100,4) if total_reads else ''
-                    cov_bases =  int(coverage_stats[12])
-                    coverage = float(coverage_stats[13])
-            
-                    #depth 
-                    depths = [int(x.split('\t')[2]) for x in open(depth_path+sample+".txt").readlines()]
-                    depths = [i for i in depths if i != 0]
-                    mean_depth = str(round(mean(depths),3)) if depths else ''
-                    min_depth = min(depths) if depths else ''
-                    max_depth = max(depths) if depths else ''
                     
-                    breadth_cns5 = len([i for i in depths if i > 5])
-                    genome_size = sum(1 for line in open(depth_path+sample+".txt"))
-                    coverage_cns5 = round(breadth_cns5 / genome_size * 100,3)  if genome_size else ''
+                    #general qc
+                    total_reads, mapped_reads, mapped_percentage, cov_bases, chimer_count = self.general_qc(bam_path+bam_file)
+                    
+                    #depth 
+                    max_depth, min_depth, mean_depth, cover, cns5_cover = self.depth(depth_path+sample+".txt")
                                         
-                    writer.writerow([sample, mapped_percentage, mapped_reads, total_reads, cov_bases, coverage, coverage_cns5, mean_depth, max_depth, min_depth])
+                    writer.writerow([sample, mapped_percentage, mapped_reads, total_reads, cov_bases, cover, cns5_cover, mean_depth, max_depth, min_depth, chimer_count])
                 
         f.close()
-        
-
+    def mafft(self, reference, not_aligned, aligned):
+        utils.mafft(reference, not_aligned, aligned)

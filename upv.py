@@ -11,121 +11,104 @@ from viruses.flu import flu
 from pipelines.deNovo import de_novo
 from viruses.polio import polio
 from viruses.hiv import hiv
+from viruses.hsv import hsv
 from utils import utils, parse_gb_file, parse_input
-from threading import Lock
 from mutations import signatures
 import os
 
 
-SCRIPT_PATH = os.path.dirname(__file__)
+SCRIPT_PATH = os.path.dirname(__file__) +'/'
 
 if __name__ == "__main__":
     
     DEBUG = False
-    mutex = Lock()
     
-    reference, fastq, flu_flag, de_novo_flag, polio_flag, cmv_flag, hiv_flag, \
-        process, gb_file, regions_file, mutations_flag, mini, \
+    reference, fastq, treads, flu_flag, de_novo_flag, polio_flag, cmv_flag, hiv_flag, \
+        hsv_flag, gb_file, regions_file, mutations_flag, mini, \
             skip_spades, vcf, cnsThresh, multi_ref_flag = parse_input.parser()
     
-    dirs=['BAM','QC','CNS','CNS_5','QC/depth'] if not hiv_flag else ['BAM','QC','CNS','QC/depth', 'alignment']
+    dirs=['BAM','QC','CNS','CNS_5','QC/depth', 'alignment'] if not hiv_flag else ['BAM','QC','CNS','QC/depth', 'alignment']
     
     if not mini:      
         utils.create_dirs(dirs) 
         if hiv_flag:
-            reference = SCRIPT_PATH + "/viruses/refs/K03455.1_HIV.fasta"
+            reference = SCRIPT_PATH + "viruses/refs/K03455.1_HIV.fasta"
             vcf = True
         elif not reference:
             raise ValueError("reference sequence is required.")
+        
+        
             
-    if not cnsThresh:
-        cnsThresh = 0.6
+        if not cnsThresh:
+            cnsThresh = 0.6
+        
+        multi_ref_flag = True if multi_ref_flag or flu_flag else False
     
-    multi_ref_flag = True if multi_ref_flag or flu_flag else False
-
-    if fastq and reference and not mini:
-        if not fastq.endswith("/"):
-            fastq = fastq+"/"
-    
+        if fastq and reference and not mini:
+            if not fastq.endswith("/"):
+                fastq = fastq+"/"
         
-        if flu_flag:
-            pipe = flu(reference,fastq)
-        
-        elif de_novo_flag:
-            pipe = de_novo(reference,fastq) #temp comment
-            if not skip_spades:
-                #run spades multiprocessing
-                mutex.acquire()
-                utils.run_mp(process, pipe.run_spades, pipe.r1r2_list)
-                mutex.release()
-            pipe.run_blast()
-            sample_ref = pipe.choose_reference_filter_contigs()
-            pipe.import_references(sample_ref)
-        
-        elif polio_flag:
-            pipe = polio(reference,fastq)
-        
-        elif hiv_flag:
-            pipe = hiv(reference,fastq)
-
-        else:
-            pipe = general_pipe(reference,fastq)
-        
-        
-       
-        if polio_flag:
-            #filter reads - keep only polio read 
-            mutex.acquire()
-            utils.run_mp(process, pipe.filter_not_polio, pipe.r1r2_list) if not DEBUG else pipe.filter_not_polio(pipe.r1r2_list[0])
-            pipe.fastq = pipe.fastq + "polio_reads/"
-            mutex.release()
             
-            #run spades
-            if not skip_spades:
-                mutex.acquire()
-                utils.run_mp(process, pipe.run_spades, pipe.r1r2_list)
-                mutex.release()
+            if flu_flag:
+                pipe = flu(reference,fastq)
             
-    
-        #mapping multiprocessing
-        mutex.acquire()
-        utils.run_mp(process, pipe.bam, pipe.r1r2_list) if not DEBUG else pipe.bam(pipe.r1r2_list[0])
-        mutex.release()
-        
-        if polio_flag:
-            pipe.map_bam()
-        
-        if multi_ref_flag:    
-            utils.split_bam("BAM/")
-        
-        
-
-        if vcf:
-            utils.create_dirs(["VCF"])
-            pipe.variant_calling()
+            elif de_novo_flag:
+                pipe = de_novo(reference,fastq) #temp comment
+                if not skip_spades:
+                    pipe.run_spades()
+                pipe.run_blast()
+                sample_ref = pipe.choose_reference_filter_contigs()
+                pipe.import_references(sample_ref)
             
-        pipe.cns_depth("BAM/","QC/depth/","CNS/","CNS_5/", cnsThresh) #temp comment
-        
-        
-        if flu_flag:
-            pipe.concat_samples()
-            pipe.concat_segments()
-        
-        if hiv_flag:
-            pipe.cut_to_gene("CNS/", "alignment/")
-            pipe.excel_fasta("CNS/",hiv_flag)
+            elif polio_flag:
+                pipe = polio(reference,fastq)
             
-        pipe.results_report("BAM/", "QC/depth/", 'QC/report') #temp comment
-        
-    if cmv_flag or (mutations_flag and not mini):  # TODO - fix flu - im not sure this aligner fits
-        utils.create_dirs(['alignment'])
-        utils.mafft(reference, "alignment/all_not_aligned.fasta", "alignment/all_aligned.fasta")
-    
-    if flu_flag:
-        utils.create_dirs(['alignment'])
-        pipe.mafft()
+            elif hiv_flag:
+                pipe = hiv(reference,fastq)
                 
+            elif hsv_flag:
+                pipe = hsv(reference,fastq)
     
+            else:
+                pipe = general_pipe(reference,fastq)
+            
+            if polio_flag:
+                # filter reads - keep only polio read 
+                pipe.filter_not_polio()
+                pipe.fastq = pipe.fastq + "polio_reads/"
+                
+                #run spades
+                if not skip_spades:
+                    pipe.run_spades()
+        
+            #mapping 
+            pipe.bam(treads)
+            
+            
+            if multi_ref_flag:    
+                utils.split_bam("BAM/")
+            
+    
+            if vcf:
+                utils.create_dirs(["VCF"])
+                pipe.variant_calling()
+                
+            pipe.cns_depth("BAM/","QC/depth/","CNS/","CNS_5/", cnsThresh) #temp comment
+            
+            
+            if flu_flag:
+                pipe.concat_samples()
+                pipe.concat_segments()
+            
+            
+            pipe.mafft(reference, "alignment/all_not_aligned.fasta", "alignment/all_aligned.fasta")
+       
+            if hiv_flag:
+                pipe.excel_fasta("CNS/",hiv_flag)
+
+            
+            pipe.qc_report("BAM/", "QC/depth/", 'QC/QC_report') #temp comment
+        
 
     if gb_file:
         parse_gb_file.parse(gb_file)

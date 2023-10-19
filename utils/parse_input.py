@@ -12,12 +12,13 @@ def parser():
         parser = argparse.ArgumentParser()
         parser.add_argument('-i', '--input', help='fastq folder')
         parser.add_argument('-r','--reference' ,help='reference')
-        parser.add_argument('-p','--process' ,help='number of processes', default=1) #number of processes to run in perallel on supported tasks
+        parser.add_argument('-t','--treads',default='12' ,help='set max treads for a prosses. default = 12')
         parser.add_argument('-mr','--multi_ref', action='store_true', help='multi fasta reference') #
         parser.add_argument('-f', '--flu', action='store_true', help="influenza segements analysis") #store_true will store the argument as true
         parser.add_argument('-d', '--de_novo', action='store_true', help="de-novo analysis") #store_true will store the argument as true
         parser.add_argument('--polio', action='store_true', help="PolioVirus analysis") #store_true will store the argument as true
         parser.add_argument('--HIV', help="HIV analysis for genes: PR, RT and Integrase. do not provide reference sequnce. provide format table.") #store_true will store the argument as true
+        parser.add_argument('--HSV', action='store_true', help="HSV analysis for genes: UL23, UL30, UL42. do not provide reference sequnce.") #store_true will store the argument as true
         parser.add_argument('-c', '--cmv', action='store_true', help="cetomegalovirus (human herpesvirus 5) analysis") #store_true will store the argument as true
         parser.add_argument('-gb','--gb_file' ,help='insert gb file and get reference regions report')
         parser.add_argument('-m','--mutations_table' , action='store_true',help='mutations table reprort. gb file flag is mandatory')
@@ -27,7 +28,7 @@ def parser():
         parser.add_argument('-v','--vcf' , action='store_true',help='generates vcf files.')
         parser.add_argument('--cnsThresh' ,help='Minimum frequency threshold(0 - 1) to call consensus. (Default: 0.6)') #defualt is set in the main script (upy.py)
         args = parser.parse_args()
-        return args.reference, args.input, args.flu, args.de_novo, args.polio, args.cmv, args.HIV, \
-                   int(args.process), args.gb_file, args.regions_file, args.mutations_table, \
+        return args.reference, args.input, args.treads, args.flu, args.de_novo, args.polio, args.cmv, args.HIV, \
+                   args.HSV, args.gb_file, args.regions_file, args.mutations_table, \
                        args.mini, args.skip_spades, args.vcf, args.cnsThresh, args.multi_ref
         

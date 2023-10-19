@@ -10,7 +10,8 @@ import sh
 import subprocess
 import shutil
 import multiprocessing as mp
-from Bio import SeqIO
+from Bio import SeqIO 
+from Bio.Seq import Seq
 import pandas as pd
 import numpy as np
 
@@ -34,6 +35,7 @@ def get_r1r2_list(fastq_path):
         sample = r1.split("_")[0].split(".fastq")[0] #sample short name
         r1r2_list.append([sample,r1,r2])
     return r1r2_list
+
  
 #split all bam files by segments
 def split_bam(dir):
@@ -46,8 +48,8 @@ def split_bam(dir):
 def create_dirs(dirs):
         for dir in dirs:
             if os.path.exists(dir):
-                shutil.rmtree(dir)
-            os.makedirs(dir)
+                shutil.rmtree(dir,ignore_errors=True)
+            os.makedirs(dir,exist_ok=True)
             
 def remove_from_name(dir, to_remove):
     for file in os.listdir(dir):
@@ -74,7 +76,7 @@ def get_sequences(alignment_file):
     for sample, record in alignment.items():
         sequences[sample] = str(record.seq).upper()
 
-        sequences[sample.replace("Consensus_", "").split("threshold")[0]] = sequences.pop(sample)
+        sequences[sample.replace("Consensus_", "").split("_threshold")[0]] = sequences.pop(sample)
 
     return sequences
 
@@ -116,6 +118,34 @@ def hamming_distance(seq1, seq2):
  return (df["difference"].sum())
 
 
+def write_sub_fasta(fasta, path, regions, gene, strand='+'):
+    with open(path + gene + ".fasta",'w') as f:
+        start = regions[0]
+        end = regions[1]
+        for header, seq in fasta.items():
+            if strand=='+':
+                sub_seq = seq[start-1:end-1]
+            elif strand=='-':
+                sub_seq = str(Seq(seq[start-1:end-1]).reverse_complement())
+            else:
+                raise ValueError("strand must be + or -.")
+            f.write(">" + header + '\n')
+            f.write(sub_seq + '\n')    
+    
+
+def fix_cns_header(path):
+    for file in os.listdir(path):
+        if file.endswith(".fasta") or file.endswith(".fa"):
+            fasta = get_sequences(path + file)
+            
+            ofile = open(path + file, "w")
+            
+            for header, seq in fasta.items():
+                ofile.write(">" + header + "\n" + seq + "\n")
+    
+            ofile.close()
+        
+        
 translate_table = {
     'ATA': 'I', 'ATC': 'I', 'ATT': 'I', 'ATG': 'M',
     'ACA': 'T', 'ACC': 'T', 'ACG': 'T', 'ACT': 'T',

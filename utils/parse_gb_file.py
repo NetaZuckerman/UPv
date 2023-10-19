@@ -30,7 +30,8 @@ def parse(file, ds=True):
                
                 pos_list.extend(line.split("join(")[1].split(",")) 
                 while not line.endswith(")"):
-                    line = f.readline().strip()
+                    i+=1
+                    line = lines[i].strip()
                     pos_list.extend(line.split(")")[0].split(","))
                 pos_list = [x for x in pos_list if not x=='']
             
@@ -50,8 +51,7 @@ def parse(file, ds=True):
                             "END": position[1].split(")")[0],
                             "STRAND": strand}, ignore_index=True)
             
-            
-    f.close()
+        
     
     if ds:
         df.to_csv(file.replace(".gb", "_regions.csv"), index = False)

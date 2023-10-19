@@ -16,7 +16,7 @@ import os
 import pandas as pd
 from Bio import SeqIO
 import shutil
-from pipelines.generalPipeline import general_pipe, INDEX, MAPPED_BAM, SORT
+from pipelines.generalPipeline import general_pipe, INDEX, FILTER_BAM, SORT
 
 
 #alignment conmmands
@@ -36,13 +36,12 @@ class de_novo(general_pipe):
         create_dirs(["BAM/fastq_based", "BAM/contig_based", "VCF/fastq_based", "VCF/contig_based"]) #temp comment
         
     #run spades on paired end fastq files. the list must contain sample, r1 r2 file names 
-    def run_spades(self,sample_r1_r2):
-        sample = sample_r1_r2[0]
-        r1= sample_r1_r2[1]
-        r2 = sample_r1_r2[2]
-        create_dirs(["spades/spades_results/"+sample])#temp comment
-        subprocess.call(RUN_SPADES % dict( r1=self.fastq + r1, r2=self.fastq + r2, output_path="spades/spades_results/"+ sample + "/"), shell=True)
-        #subprocess.call(RUN_SPADES % dict( r1=self.fastq + r1, output_path="spades/spades_results/"+ sample + "/"), shell=True)
+    def run_spades(self):
+        for sample, r1, r2 in self.r1r2_list:
+            create_dirs(["spades/spades_results/"+sample])#temp comment
+            subprocess.call(RUN_SPADES % dict( r1=self.fastq + r1, r2=self.fastq + r2, output_path="spades/spades_results/"+ sample + "/"), shell=True)
+
+
     #run blastn on spades contigs - trascript.fasta  
     def run_blast(self):
         create_dirs(["blast"])#temp comment
@@ -96,6 +95,7 @@ class de_novo(general_pipe):
     #override
     #map each sample to its reference
     def bam(self,sample_r1_r2):
+        filter_out_code = 4
         #align selected contig 
         sample = sample_r1_r2[0]
         r1= sample_r1_r2[1]
@@ -105,8 +105,8 @@ class de_novo(general_pipe):
             subprocess.call(INDEX % dict(reference="fasta/selected_references/" + fasta), shell=True)
             subprocess.call(BWM_MEM_CONTIGS % dict(reference="fasta/selected_references/" + fasta, sample_fasta="fasta/selected_contigs/"+fasta, out_file=sample, output_path="BAM/contig_based/"), shell=True) #map to reference
             subprocess.call(BWM_MEM_FASTQ % dict(reference="fasta/selected_references/" + fasta ,r1=self.fastq+r1, r2=self.fastq+r2, out_file=sample, output_path="BAM/fastq_based/"), shell=True) #map to reference
-            subprocess.call(MAPPED_BAM % dict(sample=sample, output_path="BAM/fastq_based/"), shell=True) #keep mapped reads
-            subprocess.call(MAPPED_BAM % dict(sample=sample, output_path="BAM/contig_based/"), shell=True) #keep mapped reads
+            subprocess.call(FILTER_BAM % dict(sample=sample,filter_out_code = filter_out_code, output_path="BAM/fastq_based/"), shell=True) #keep mapped reads
+            subprocess.call(FILTER_BAM % dict(sample=sample,filter_out_code = filter_out_code, output_path="BAM/contig_based/"), shell=True) #keep mapped reads
             subprocess.call(SORT % dict(sample=sample, output_path="BAM/fastq_based/"), shell=True)         
             subprocess.call(SORT % dict(sample=sample, output_path="BAM/contig_based/"), shell=True)         
     
@@ -126,7 +126,7 @@ class de_novo(general_pipe):
     
     #override
     #write report twice (contigs based and fastq based)
-    def results_report(self, bam_path, depth_path, output_report, vcf=0):
+    def qc_report(self, bam_path, depth_path, output_report, vcf=0):
         contig_dir = "contig_based/"
         fastq_dir = "fastq_based/"        
         super().results_report(bam_path+contig_dir, depth_path+contig_dir, output_report+"_contig_based")

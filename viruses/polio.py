@@ -24,7 +24,7 @@ BWM_MEM_CONTIGS = "bwa mem -v1 -t 16  %(reference)s %(sample_fasta)s | samtools 
     #BWM_MEM_FASTQ = "bwa mem -v1 -t 32 %(reference)s %(r1)s %(r2)s | samtools view -bq 1 | samtools view -@ 32 -b -F 4- > %(output_path)s%(out_file)s.bam"
 #################
 from utils import utils
-from pipelines.generalPipeline import  MAPPED_BAM, SORT, general_pipe
+from pipelines.generalPipeline import  FILTER_BAM, SORT, general_pipe
 import subprocess
 import os
 from utils.utils import SPLIT
@@ -39,59 +39,49 @@ class polio(general_pipe):
     #in minion the we dont have r1 and r2. all files should be merged by barcodes before running this code
     #TODO: implement minion
 
-    def filter_not_polio(self,sample_r1_r2,minion=False):
+    def filter_not_polio(self):
         '''
         filter outs reads that are not mapped to polio.
         
         Parameters
         ----------
-        sample_r1_r2 : list of lists
-            [sample, r1 fastq path, r2 fastq path].
-        minion : bool, optional
-            minion analysis. The default is False.
 
         Returns
         -------
         None.
 
         '''
-        sample = sample_r1_r2[0]
-        r1= sample_r1_r2[1]
-        r2 = sample_r1_r2[2]       
-        if minion:
-            subprocess.call(FILTER % dict( reference=self.reference, fastq=self.fastq + r1, output_path=self.fastq+"polio_reads/", sample=sample), shell=True)
-            subprocess.call(BAM2FQ % dict(file=self.fastq+"polio_reads/" + sample), shell=True)
-        else:
+        for sample, r1, r2 in self.r1r2_list:
             subprocess.call(FILTER % dict( reference=self.reference, r1=self.fastq + r1, r2=self.fastq + r2, output_path=self.fastq+"polio_reads/", sample=sample), shell=True)
             subprocess.call(BAM2FQ % dict(file=self.fastq+"polio_reads/" + sample), shell=True)
-        os.remove(self.fastq+"polio_reads/" + sample + ".bam")
-        print("finished filtering")
+            os.remove(self.fastq+"polio_reads/" + sample + ".bam")
     
-    def run_spades(self,sample_r1_r2):
-        sample = sample_r1_r2[0]
-        utils.create_dirs(["spades/spades_results/"+sample])
-        subprocess.call(RUN_SPADES % dict( sample=self.fastq+sample+".fastq", output_path="spades/spades_results/"+ sample + "/"), shell=True)
+    def run_spades(self):
+        for sample, r1, r2 in self.r1r2_list:
+            utils.create_dirs(["spades/spades_results/"+sample])
+            subprocess.call(RUN_SPADES % dict( sample= self.fastq+sample+".fastq", output_path="spades/spades_results/"+ sample + "/"), shell=True)
               
     #override
     #map each sample to its reference
-    def bam(self,sample_r1_r2):
-        sample = sample_r1_r2[0]
-        subprocess.call(BWM_MEM_CONTIGS % dict(reference=self.reference, sample_fasta="spades/spades_results/"+ sample + "/"+"transcripts.fasta", out_file=sample, output_path="BAM/contig_based/"), shell=True) #map to reference
-        subprocess.call(BWM_MEM_FASTQ % dict(reference=self.reference ,fastq=self.fastq+sample+".fastq", out_file=sample, output_path="BAM/fastq_based/"), shell=True) #map to reference
-        subprocess.call(SPLIT % dict(bam="BAM/fastq_based/"+sample+".bam"), shell=True)
-        os.remove("BAM/fastq_based/"+sample+".bam")
-        subprocess.call(SPLIT % dict(bam="BAM/contig_based/"+sample+".bam"), shell=True)
-        os.remove("BAM/contig_based/"+sample+".bam")
+    def bam(self,treads):
+        for sample, r1, r2 in self.r1r2_list:
+            subprocess.call(BWM_MEM_CONTIGS % dict(reference=self.reference, sample_fasta="spades/spades_results/"+ sample + "/"+"transcripts.fasta", out_file=sample, output_path="BAM/contig_based/"), shell=True) #map to reference
+            subprocess.call(BWM_MEM_FASTQ % dict(reference=self.reference ,fastq=self.fastq+sample+".fastq", out_file=sample, output_path="BAM/fastq_based/"), shell=True) #map to reference
+            subprocess.call(SPLIT % dict(bam="BAM/fastq_based/"+sample+".bam"), shell=True)
+            os.remove("BAM/fastq_based/"+sample+".bam")
+            subprocess.call(SPLIT % dict(bam="BAM/contig_based/"+sample+".bam"), shell=True)
+            os.remove("BAM/contig_based/"+sample+".bam")
+            self.map_bam()
 
     def map_bam(self):
-
+        filter_out_code = 4
         for bam in os.listdir("BAM/fastq_based/"):
             sample_ref = bam.split(".bam")[0]
-            subprocess.call(MAPPED_BAM % dict(sample=sample_ref, output_path="BAM/fastq_based/"), shell=True) #keep mapped reads
+            subprocess.call(FILTER_BAM % dict(sample=sample_ref, filter_out_code = filter_out_code, output_path="BAM/fastq_based/"), shell=True) #keep mapped reads
             subprocess.call(SORT % dict(sample=sample_ref, output_path="BAM/fastq_based/"), shell=True)         
         for bam in os.listdir("BAM/contig_based/"):
             sample_ref = bam.split(".bam")[0]
-            subprocess.call(MAPPED_BAM % dict(sample=sample_ref, output_path="BAM/contig_based/"), shell=True) #keep mapped reads
+            subprocess.call(FILTER_BAM % dict(sample=sample_ref, filter_out_code = filter_out_code, output_path="BAM/contig_based/"), shell=True) #keep mapped reads
             subprocess.call(SORT % dict(sample=sample_ref, output_path="BAM/contig_based/"), shell=True)         
         
         
@@ -112,7 +102,7 @@ class polio(general_pipe):
         
     #override
     #write report twice (contigs based and fastq based)
-    def results_report(self, bam_path, depth_path, output_report, vcf=0):
+    def qc_report(self, bam_path, depth_path, output_report, vcf=0):
         contig_dir = "contig_based/"
         fastq_dir = "fastq_based/"        
         super().results_report(bam_path+contig_dir, depth_path+contig_dir, output_report+"_contig_based") # TODO - fix de novo report

@@ -38,11 +38,13 @@ def save_format_xl(df,num_samples,output):
     
             
     writer = pd.ExcelWriter(output, engine='xlsxwriter')
-    df.to_excel(writer, sheet_name='Sheet1', index=False)
+    df.to_excel(writer, sheet_name='mutations', index=False)
     workbook  = writer.book
-    worksheet = writer.sheets['Sheet1']
+    worksheet = writer.sheets['mutations']
     (max_row, max_col) = df.shape
     
+    xl_aa_start = 4+num_samples-1+2
+    xl_aa_end = 4+num_samples-1+2+num_samples
     #-------------------------------------------------------------------
     #formats
     red_format = workbook.add_format({'font_color': 'red'})
@@ -50,8 +52,8 @@ def save_format_xl(df,num_samples,output):
     yellow_format = workbook.add_format({'bg_color':   '#FFFB00'})
     #-------------------------------------------------------------------
     #rules
-    worksheet.conditional_format(0,max_col-2, max_row, max_col-2, {'type':     'formula',
-                                       'criteria': "=$" + xl_col_to_name(max_col-1) +"2=1",
+    worksheet.conditional_format(0,xl_aa_end+2, max_row, xl_aa_end+2, {'type':     'formula',
+                                       'criteria': "=$" + xl_col_to_name(xl_aa_end+3) +"1=1",
                                        'format':   red_format})
     
     worksheet.conditional_format(0,1, max_row, max_col-1, {'type':     'cell',
@@ -73,8 +75,7 @@ def save_format_xl(df,num_samples,output):
                                     'format':   grey_format})
     
     #-------------------------------------------------------------------
-    xl_aa_start = 4+num_samples-1+2
-    xl_aa_end = 4+num_samples-1+2+num_samples
+    
     
     worksheet.conditional_format(1,xl_aa_start+1, max_row, xl_aa_end, {'type':     'formula',
                                        'criteria': "=NOT($"+xl_col_to_name(xl_aa_start)+"2="+xl_col_to_name(xl_aa_start+1)+"2)",
