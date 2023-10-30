@@ -17,12 +17,9 @@ CAT_NO_HEADER = "awk 'FNR>1' %(files)s* >> %(bigfile)s"
 
 class flu (general_pipe):
 
-    def __init__(self, reference, fastq):
-        super().__init__(reference, fastq)    
+    def __init__(self, reference, fastq, threads):
+        super().__init__(reference, fastq, threads)    
    
-    #split all bam files by segments
-    def split_bam(self):
-        utils.split_bam()
     
     def concat_samples(self):
         os.makedirs("CNS_5/per_sample")
@@ -59,7 +56,11 @@ class flu (general_pipe):
         segment_file.close()
         
             
-    def mafft(self):
+    def mafft(self, not_aligned, aligned):
+        
+        self.concat_samples()
+        self.concat_segments()
+        
         #all samples without segment and not aligned
         subprocess.call(ALL_NOT_ALIGNED % dict(dir="CNS_5/per_sample/cat/*"), shell=True)  
         #remove segments headers from reference and save it

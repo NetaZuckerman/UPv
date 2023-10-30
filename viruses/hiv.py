@@ -7,10 +7,10 @@ Created on Mon Jun 12 06:40:21 2023
 """
 
 import pandas as pd
-from pipelines.generalPipeline import general_pipe, DEPTH
+from pipelines.generalPipeline import general_pipe, DEPTH, ALL_NOT_ALIGNED
 import subprocess
 from os import listdir
-from utils.utils import get_sequences, write_sub_fasta
+from utils.utils import get_sequences, write_sub_fasta, mafft
 import os
 import pysam
 from statistics import mean
@@ -25,8 +25,9 @@ rt_reg = (2661,3294)
 int_reg = (4230, 5094)
 
 class hiv(general_pipe):
-    def __init__(self, reference, fastq):
-        super().__init__(reference, fastq)    
+    def __init__(self, reference, fastq, threads, metadata):
+        super().__init__(reference, fastq, threads)    
+        self.metadata = metadata
  
     
     def cut_genes(self, aln_path):
@@ -97,9 +98,20 @@ class hiv(general_pipe):
                 sample = bam_file.split(".bam")[0].replace(".mapped.sorted", "")
                 subprocess.call(DEPTH % dict(bam_path=bam_path, bam_file=bam_file, depth_path=depth_path, sample=sample), shell=True) 
             
+    
+    def mafft(self, not_aligned, aligned):
+        '''
+        multi-fasta align.
+        cat all consensus fasta sequences and run MAFFT. the implementation of MAFFT is in utils.
+
+        '''
+        subprocess.call(ALL_NOT_ALIGNED % dict(dir="CNS/*"), shell=True)
+        mafft(self.reference, not_aligned, aligned)
+    
     def qc_report(self, bam_path, depth_path, output_report):
         self.cut_genes("alignment/")
-        fasta = pd.read_csv(output_report.replace("report", "fasta.csv"), dtype={'SAMPLE_No_NGS': 'string'})
+        self.excel_fasta("alignment/",self.metadata)
+        fasta = pd.read_csv(output_report.replace("QC_report", "fasta.csv"), dtype={'SAMPLE_No_NGS': 'string'})
         
         f = open(output_report+".csv", 'w')
         writer = csv.writer(f)

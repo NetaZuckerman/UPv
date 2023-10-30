@@ -16,6 +16,10 @@ The code will find the mutations of the sequences and present it ordered by gene
 ----------------------------------------------------------------------------------------------
 
 """
+import sys 
+import os
+MAIN_SCIPT_DIR = os.path.dirname(__file__)+'/../'
+sys.path.insert(1, MAIN_SCIPT_DIR)
 from sys import argv
 from math import floor
 import pandas as pd
@@ -44,7 +48,7 @@ def mutations_by_sample(mutations_position,sequences):
     for sample, record in sequences.items():
         mutations = []
         for pos in mutations_position:
-            mutations.append(record[pos])
+            mutations.append(record[pos-1])
         mutations_by_sample[sample] = mutations
     return mutations_by_sample
 
@@ -104,7 +108,7 @@ def get_gene(mutations_positions_nt, regions):
             end = pos[1]
             if mut in range(start,end):
                 gene_name = gene
-                pos_gene_nt = mut-start + 2
+                pos_gene_nt = mut-start + 1
                 pos_gene_aa = floor(pos_gene_nt/3) if pos_gene_nt%3 == 0 else  floor(pos_gene_nt/3) + 1
         gene_names.append(gene_name)
         position_on_gene_nt.append(pos_gene_nt)
@@ -191,7 +195,7 @@ def get_single_aa(seq, position, region):
         codon = str(Seq(codon).complement())
     else:
         
-        pos_on_gene = position - start + 1
+        pos_on_gene = position - start 
         
         mod = pos_on_gene % 3
         if mod == 0:  # third nuc on the codon
@@ -201,7 +205,7 @@ def get_single_aa(seq, position, region):
         if mod == 2:  # second nuc on the codon
             codon_pos = (position - 2, position -1, position)
             
-        codon = seq[codon_pos[0]] + seq[codon_pos[1]] + seq[codon_pos[2]]
+        codon = seq[codon_pos[0]-1] + seq[codon_pos[1]-1] + seq[codon_pos[2]-1]
     
     if codon in translate_table:
         aa = translate_table[codon] if not '-' in codon and not 'N' in codon else 'X'
@@ -241,8 +245,17 @@ def get_all_aa(mutations_positions_nt, sequences, gene_names, regions):
 
     return mutations_by_sample_aa
     
-def run(alignment_file,regions_csv,output,polio = False):
-    show_all = False
+def drop_low_qc(seqs, thresh=70):
+    new_seqs = {}
+    for sample, seq in seqs.items():
+        no_cover = (seq.count('N') + seq.count('-') + seq.count('n'))
+        if (no_cover / len(seq)) * 100 < thresh:
+            new_seqs[sample] = seq
+            
+    return new_seqs
+
+def run(alignment_file,regions_csv,output, show_all = False):
+    
     
     '''
     run all functions.
@@ -250,9 +263,11 @@ def run(alignment_file,regions_csv,output,polio = False):
     '''
     
     sequences = get_sequences(alignment_file)
+    sequences = drop_low_qc(sequences)
+    
     if show_all:
         seq_len= len(list(sequences.values())[0])
-        mutations_positions_nt = range(0, seq_len, 1)
+        mutations_positions_nt = range(1, seq_len+1, 1)
     else:
         mutations_positions_nt = mutations_positions(sequences)
     mutations_by_sample_nt = mutations_by_sample(mutations_positions_nt,sequences)
@@ -267,8 +282,7 @@ def run(alignment_file,regions_csv,output,polio = False):
     df["gene_name"] = gene_names
     df["nt_position_on_gene"] = position_on_gene_nt 
     df["nt_position_on_genome"] = mutations_positions_nt
-    #df["posision_on_p1"] = mutations_positions_nt - 749 if polio else ""
-    df["nt_position_on_genome"] += 1
+   
     for sample, mut in mutations_by_sample_nt.items():
         df[sample+"_NT"] = mut
     df["aa_position_on_gene"] = position_on_gene_aa

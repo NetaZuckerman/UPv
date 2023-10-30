@@ -19,15 +19,13 @@ import pandas as pd
 
 #alignment conmmands
 INDEX = "bwa index %(reference)s"
-#BWM_MEM = "bwa mem -v1 -t 16 %(reference)s %(r1)s | samtools view -@ 16 -b - > %(output_path)s%(sample)s.bam"
-BWM_MEM = "bwa mem -v1 -t 16 %(reference)s %(r1)s %(r2)s | samtools view -@ 16 -b - > %(output_path)s%(sample)s.bam"
-FILTER_BAM = "samtools view -@ 16 -b -F %(filter_out_code)s %(output_path)s%(sample)s.bam > %(output_path)s%(sample)s.mapped.bam"
-SORT = "samtools sort -@ 14 %(output_path)s%(sample)s.mapped.bam -o %(output_path)s%(sample)s.mapped.sorted.bam"
+BWM_MEM = "bwa mem -v1 -t %(threads)s %(reference)s %(r1)s %(r2)s | samtools view -@ %(threads)s -b - > %(output_path)s%(sample)s.bam"
+FILTER_BAM = "samtools view -@ %(threads)s -b -F %(filter_out_code)s %(output_path)s%(sample)s.bam > %(output_path)s%(sample)s.mapped.bam"
+SORT = "samtools sort -@ %(threads)s %(output_path)s%(sample)s.mapped.bam -o %(output_path)s%(sample)s.mapped.sorted.bam"
 CHIMER = "samtools view %(output_path)s%(sample)s.bam |  grep 'SA:' > %(output_path)s%(sample)s.chimeric_reads.txt"
 DEPTH = "samtools depth -a %(bam_path)s%(bam_file)s > %(depth_path)s%(sample)s.txt"
 CNS = "samtools mpileup -A %(bam_path)s%(bam_file)s | ivar consensus -t %(cnsThresh)s -m 1 -p %(cns_path)s%(sample)s.fa"
 CNS5 = "samtools mpileup -A %(bam_path)s%(bam_file)s | ivar consensus -t %(cnsThresh)s -m 5 -p %(cns5_path)s%(sample)s.fa"
-SAMTOOLS_INDEX = "samtools index -@ 16 %(bam_path)s%(bam_file)s"
 #variants
 VCF = "bcftools mpileup -d 8000 --skip-indels -f %(ref)s %(bam)s -a AD,DP | sed '/^#/d' > %(vcf)s"
 
@@ -43,14 +41,15 @@ BREADTH_CNS5 = "$(cut -f3 QC/depth/%(sample)s.txt | awk '$1>5{c++} END{print c+0
 class general_pipe():
     
     
-    def __init__(self, reference, fastq):
+    def __init__(self, reference, fastq, threads):
         self.reference = reference
         self.fastq = fastq
         self.r1r2_list = utils.get_r1r2_list(self.fastq)
+        self.threads = threads
         subprocess.call(INDEX % dict(reference=self.reference), shell=True)
 
 
-    def bam(self, treads):
+    def bam(self):
         '''
         generate bam file from paired-end fastq (R1,R2).
         generate filtered file with mapped reads.
@@ -65,9 +64,9 @@ class general_pipe():
         filter_out_code = 2052
          
         for sample, r1, r2 in self.r1r2_list:
-            subprocess.call(BWM_MEM % dict(reference=self.reference,r1=self.fastq + r1, r2=self.fastq + r2, sample=sample, output_path="BAM/"), shell=True) #map to reference
-            subprocess.call(FILTER_BAM % dict(sample=sample, filter_out_code = filter_out_code, output_path="BAM/"), shell=True) #keep reads according to the filter code: https://broadinstitute.github.io/picard/explain-flags.html
-            subprocess.call(SORT % dict(sample=sample, output_path="BAM/"), shell=True)         
+            subprocess.call(BWM_MEM % dict(threads = self.threads, reference=self.reference,r1=self.fastq + r1, r2=self.fastq + r2, sample=sample, output_path="BAM/"), shell=True) #map to reference
+            subprocess.call(FILTER_BAM % dict(threads = self.threads, sample=sample, filter_out_code = filter_out_code, output_path="BAM/"), shell=True) #keep reads according to the filter code: https://broadinstitute.github.io/picard/explain-flags.html
+            subprocess.call(SORT % dict(threads = self.threads, sample=sample, output_path="BAM/"), shell=True)         
             #chimeric reads: find reads that where mapped to more then one region in the genome
             subprocess.call(CHIMER % dict(sample=sample, output_path="BAM/"), shell=True)
         
@@ -155,14 +154,14 @@ class general_pipe():
                 os.remove(cns5_path+sample+".qual.txt")
                 utils.fix_cns_header("CNS/")
                 utils.fix_cns_header("CNS_5/")
-    def mafft(self):
+    def mafft(self, not_aligned, aligned):
         '''
         multi-fasta align.
         cat all consensus fasta sequences and run MAFFT. the implementation of MAFFT is in utils.
 
         '''
         subprocess.call(ALL_NOT_ALIGNED % dict(dir="CNS_5/*"), shell=True)
-        utils.mafft(self.reference)
+        utils.mafft(self.reference, not_aligned, aligned)
     
     #write report.csv - mapping analysis
     #de novo flag was created to generate different output for de novo analysis, used in denovo class and polio class.
@@ -225,5 +224,6 @@ class general_pipe():
                     writer.writerow([sample, mapped_percentage, mapped_reads, total_reads, cov_bases, cover, cns5_cover, mean_depth, max_depth, min_depth, chimer_count])
                 
         f.close()
-    def mafft(self, reference, not_aligned, aligned):
-        utils.mafft(reference, not_aligned, aligned)
+    def mafft(self, not_aligned, aligned):
+        subprocess.call(ALL_NOT_ALIGNED % dict(dir="CNS_5/*"), shell=True)  
+        utils.mafft(self.reference, not_aligned, aligned)

@@ -98,9 +98,8 @@ def mutations_positions(sequences, no_n = 1):
             if record[pos] in ambiguous_nucleotides:
                 break
             if not temp == record[pos] :
-                mutations_positons.append(pos)
+                mutations_positons.append(pos+1)
                 break
-        continue
     return mutations_positons
 
 def run_mp(threads, func, arg):
