@@ -30,7 +30,7 @@ if __name__ == "__main__":
     dirs=['BAM','QC','CNS','CNS_5','QC/depth', 'alignment'] if not hiv_flag else ['BAM','QC','CNS','QC/depth', 'alignment']
     
     if not mini:      
-        # utils.create_dirs(dirs) 
+        utils.create_dirs(dirs) 
         if hiv_flag:
             reference = SCRIPT_PATH + "viruses/refs/K03455.1_HIV.fasta"
             vcf = True
@@ -69,22 +69,22 @@ if __name__ == "__main__":
             
            
             #mapping 
-            # pipe.bam()
+            pipe.bam()
             
             
-            # if multi_ref_flag:    
-            #     utils.split_bam("BAM/")
+            if multi_ref_flag:    
+                utils.split_bam("BAM/")
             
     
             if vcf:
                 utils.create_dirs(["VCF"])
                 pipe.variant_calling()
                 
-            # pipe.cns_depth("BAM/","QC/depth/","CNS/","CNS_5/", cnsThresh) #temp comment
+            pipe.cns_depth("BAM/","QC/depth/","CNS/","CNS_5/", cnsThresh) #temp comment
             
             
-           # if not multi_ref_flag or flu_flag:
-          #      pipe.mafft("alignment/all_not_aligned.fasta", "alignment/all_aligned.fasta")
+            if not multi_ref_flag or flu_flag:
+                pipe.mafft("alignment/all_not_aligned.fasta", "alignment/all_aligned.fasta")
        
             
             pipe.qc_report("BAM/", "QC/depth/", 'QC/QC_report') #temp comment
