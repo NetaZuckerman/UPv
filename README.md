@@ -39,7 +39,6 @@ The results are the parsed gb file and the mutations report. \
 
 #### -v|--vcf (optional)
 Generate a variant calling file. \
-This step fill the identity column in QC/report.csv file by counting the mutations in the vcf.
 
 #### -mr|--multi_ref (optional)
 map reads to multi-fasta reference.
