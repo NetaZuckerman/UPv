@@ -46,10 +46,9 @@ class general_pipe():
         self.fastq = fastq
         self.r1r2_list = utils.get_r1r2_list(self.fastq)
         self.threads = threads
-        subprocess.call(INDEX % dict(reference=self.reference), shell=True)
 
 
-    def bam(self):
+    def mapping(self):
         '''
         generate bam file from paired-end fastq (R1,R2).
         generate filtered file with mapped reads.
@@ -61,6 +60,8 @@ class general_pipe():
             [sample, r1 fastq path, r2 fastq path].
 
         '''
+        subprocess.call(INDEX % dict(reference=self.reference), shell=True)
+
         filter_out_code = 2052
          
         for sample, r1, r2 in self.r1r2_list:
@@ -196,27 +197,31 @@ class general_pipe():
             chimer_count = len(f.readlines())
         return chimer_count
     
-    def general_qc(self, bam_file):
-        total_reads = pysam.AlignmentFile(bam_file.split(".mapped")[0]+".bam").count(until_eof=True) 
+    def general_qc(self, bam_file, total_reads):
         coverage_stats = pysam.coverage(bam_file).split("\t")
         mapped_reads = int(coverage_stats[11])
         mapped_percentage = round(mapped_reads/total_reads*100,4) if total_reads else ''
         cov_bases =  int(coverage_stats[12])
         chimer_count = self.chimer_count(bam_file.split(".mapped")[0].split(".REF")[0] + ".chimeric_reads.txt")
         
-        return total_reads, mapped_reads, mapped_percentage, cov_bases, chimer_count
+        return mapped_reads, mapped_percentage, cov_bases, chimer_count
         
     def qc_report(self, bam_path, depth_path, output_report):
         f = open(output_report+".csv", 'w')
         writer = csv.writer(f)
         writer.writerow(['sample', 'mapped%','mapped_reads','total_reads','cov_bases','coverage%','coverage_CNS_5%', 'mean_depth','max_depth','min_depth', 'chimeric_read_count'])
         
+        prev_sample = ''
         for bam_file in os.listdir(bam_path):
                 if "sorted" in bam_file and "bai" not in bam_file:
                     sample = bam_file.split(".mapped")[0] + bam_file.split(".sorted")[1].split(".bam")[0]
                     
                     #general qc
-                    total_reads, mapped_reads, mapped_percentage, cov_bases, chimer_count = self.general_qc(bam_path+bam_file)
+                    if not prev_sample == sample.split(".REF")[0]: #when mapping to multi reference dont calculate again the total reads every iteration
+                        total_reads = pysam.AlignmentFile(bam_path + bam_file.split(".mapped")[0]+".bam").count(until_eof=True) 
+                        prev_sample = sample.split(".REF")[0]
+                        
+                    mapped_reads, mapped_percentage, cov_bases, chimer_count = self.general_qc(bam_path+bam_file, total_reads)
                     
                     #depth 
                     max_depth, min_depth, mean_depth, cover, cns5_cover = self.depth(depth_path+sample+".txt")
@@ -224,6 +229,4 @@ class general_pipe():
                     writer.writerow([sample, mapped_percentage, mapped_reads, total_reads, cov_bases, cover, cns5_cover, mean_depth, max_depth, min_depth, chimer_count])
                 
         f.close()
-    def mafft(self, not_aligned, aligned):
-        subprocess.call(ALL_NOT_ALIGNED % dict(dir="CNS_5/*"), shell=True)  
-        utils.mafft(self.reference, not_aligned, aligned)
+        

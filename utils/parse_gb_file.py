@@ -1,4 +1,5 @@
 import pandas as pd
+from sys import argv
 
 def parse(file, ds=True):
     '''
@@ -57,3 +58,6 @@ def parse(file, ds=True):
         df.to_csv(file.replace(".gb", "_regions.csv"), index = False)
     else:
         df.iloc[: , :-1].to_csv(file.replace(".gb", "_regions.csv"), index = False)
+
+if __name__ == "__main__":
+    parse(argv[1])

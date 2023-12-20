@@ -20,7 +20,10 @@ class flu (general_pipe):
     def __init__(self, reference, fastq, threads):
         super().__init__(reference, fastq, threads)    
    
-    
+    def mapping(self):
+        super().mapping()
+        utils.split_bam("BAM/")
+        
     def concat_samples(self):
         os.makedirs("CNS_5/per_sample")
         os.makedirs("CNS_5/per_sample/cat/")

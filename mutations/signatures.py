@@ -254,7 +254,7 @@ def drop_low_qc(seqs, thresh=70):
             
     return new_seqs
 
-def run(alignment_file,regions_csv,output, show_all = False):
+def run(alignment_file,regions_csv,output, show_all =  False):
     
     
     '''
@@ -263,7 +263,7 @@ def run(alignment_file,regions_csv,output, show_all = False):
     '''
     
     sequences = get_sequences(alignment_file)
-    sequences = drop_low_qc(sequences)
+    # sequences = drop_low_qc(sequences)
     
     if show_all:
         seq_len= len(list(sequences.values())[0])

@@ -7,6 +7,9 @@ Created on Sun Apr 10 14:22:20 2022
 """
 
 import sys
+import os
+MAIN_SCIPT_DIR = os.path.dirname(__file__)+'/../'
+sys.path.insert(1, MAIN_SCIPT_DIR)
 import pandas as pd
 from utils.utils import get_sequences, hamming_distance
 import seaborn as sns
@@ -29,7 +32,7 @@ def squars(distmat, title, names):
     res.set_yticklabels(res.get_ymajorticklabels(), fontsize = 6)
     res.set_xticklabels(res.get_xmajorticklabels(), fontsize = 6)
     plt.title(title, fontsize=16)
-    plt.savefig("images/"+title+".png")
+    plt.savefig(title+".png")
 
 def mutations(sequences, start, end, names, title):
         differences= pd.DataFrame(columns=sequences.keys(), index=range(end-start))
@@ -54,7 +57,7 @@ def mutations(sequences, start, end, names, title):
         res.set_xticklabels(res.get_xmajorticklabels(), fontsize=5.5)
         res.set_yticklabels(res.get_ymajorticklabels(), fontsize=8)
         plt.title(title, fontsize=16)
-        plt.savefig("images/"+title + " mutations" + ".png")
+        plt.savefig(title + " mutations" + ".png")
 
 
 if __name__ == "__main__":

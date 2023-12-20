@@ -48,7 +48,7 @@ class polio(general_pipe):
 
     #override
     #map each sample to its reference
-    def bam(self):
+    def mapping(self):
         
         self.filter_non_polio()
         self.fastq = self.fastq + "polio_reads/"

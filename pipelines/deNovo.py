@@ -16,12 +16,12 @@ import os
 import pandas as pd
 from Bio import SeqIO
 import shutil
-from pipelines.generalPipeline import general_pipe, INDEX, FILTER_BAM, SORT
+from pipelines.generalPipeline import general_pipe, INDEX, FILTER_BAM, SORT,CHIMER
 
 
 #alignment conmmands
-BWM_MEM_CONTIGS = "bwa mem -v1 -t 32 %(reference)s %(sample_fasta)s | samtools view -@ 32 -b - > %(output_path)s%(out_file)s.bam"
-BWM_MEM_FASTQ = "bwa mem -v1 -t 32 %(reference)s %(r1)s %(r2)s | samtools view -@ 32 -b - > %(output_path)s%(out_file)s.bam"
+BWM_MEM_CONTIGS = "bwa mem -v1 -t  %(threads)s  %(reference)s %(sample_fasta)s | samtools view -@ 32 -b - > %(output_path)s%(out_file)s.bam"
+BWM_MEM_FASTQ = "bwa mem -v1 -t  %(threads)s  %(reference)s %(r1)s %(r2)s | samtools view -@ 32 -b - > %(output_path)s%(out_file)s.bam"
 
 RUN_SPADES = "spades -1 %(r1)s -2 %(r2)s -o %(output_path)s --rna"
 #RUN_SPADES = "spades --12 %(r1)s -o %(output_path)s --rna"
@@ -33,7 +33,7 @@ class de_novo(general_pipe):
       
     def __init__(self, reference, fastq, threads):
         super().__init__(reference, fastq, threads) 
-        create_dirs(["BAM/fastq_based", "BAM/contig_based", "VCF/fastq_based", "VCF/contig_based"]) #temp comment
+        # create_dirs(["BAM/fastq_based", "BAM/contig_based", "VCF/fastq_based", "VCF/contig_based"]) #temp comment
         
     #run spades on paired end fastq files. the list must contain sample, r1 r2 file names 
     def run_spades(self):
@@ -53,7 +53,7 @@ class de_novo(general_pipe):
             dataframe.to_csv("blast/" + spades_result + ".csv", encoding='utf-8', index=False)
 
     #load blast output and choose the reference of the longest highest score contig. 
-    def choose_reference_filter_contigs(self):
+    def choose_reference_filter_contigs(self, virus_name =''):
         create_dirs(["fasta/","fasta/selected_contigs","fasta/all_contigs","fasta/selected_references","BAM/fastq_based/","BAM/contig_based/"])
         sample_ref = {} #dict of the selected reference for each sample
         for sample, r1, r2 in self.r1r2_list:   
@@ -62,6 +62,9 @@ class de_novo(general_pipe):
            df = pd.read_csv('blast/'+sample+'.txt', sep="\t", header=None)
            df.columns = ["contig_seq-id", "reference_seq-id", "reference_title", "contig_length" ,"coverage(contig_to_ref)", "raw_score", "bit_score"] 
            #filter the highest score of each contig
+           df = df[~df['reference_title'].str.contains('retrovirus|endogenous|phage', case=False)]
+           prefered_virus = df = df[df['reference_title'].str.contains(virus_name, case=False)]
+           prefered_virus_ref = df = df[df['reference_title'].str.contains('complete', case=False)]
            approved_fields = df.groupby("contig_seq-id")['raw_score'].max()
            df = df[df['raw_score'].isin(approved_fields)]
            df.to_csv('blast/filtered_'+sample+".csv", index=False)
@@ -79,7 +82,8 @@ class de_novo(general_pipe):
            filtered_file.close()
        #shutil.rmtree("spades/spades_results/")
             #select the reference of the longest contig
-           reference = df.loc[df['contig_length'].idxmax()]['reference_seq-id'].split("|")[1].split("|")[0]
+           reference = df.loc[df['contig_length'].idxmax()]['reference_seq-id']#.split("|")[1].split("|")[0]
+           reference = reference.split("|")[1].split("|")[0] if "|" in reference else reference
            sample_ref.update({sample:reference})
         return sample_ref
     
@@ -94,41 +98,46 @@ class de_novo(general_pipe):
                     continue
     #override
     #map each sample to its reference
-    def bam(self):
+    def mapping(self):
+        # self.run_spades()
+        # self.run_blast()
+        sample_ref = self.choose_reference_filter_contigs()
+        self.import_references(sample_ref)
+        
         filter_out_code = 4
+        
         #align selected contig 
         for sample, r1, r2 in self.r1r2_list:
             fasta = sample + ".fasta"
             if os.path.exists("fasta/selected_references/" + fasta):
                 subprocess.call(INDEX % dict(reference="fasta/selected_references/" + fasta), shell=True)
-                subprocess.call(BWM_MEM_CONTIGS % dict(reference="fasta/selected_references/" + fasta, sample_fasta="fasta/selected_contigs/"+fasta, out_file=sample, output_path="BAM/contig_based/"), shell=True) #map to reference
-                subprocess.call(BWM_MEM_FASTQ % dict(reference="fasta/selected_references/" + fasta ,r1=self.fastq+r1, r2=self.fastq+r2, out_file=sample, output_path="BAM/fastq_based/"), shell=True) #map to reference
-                subprocess.call(FILTER_BAM % dict(sample=sample,filter_out_code = filter_out_code, output_path="BAM/fastq_based/"), shell=True) #keep mapped reads
-                subprocess.call(FILTER_BAM % dict(sample=sample,filter_out_code = filter_out_code, output_path="BAM/contig_based/"), shell=True) #keep mapped reads
-                subprocess.call(SORT % dict(sample=sample, output_path="BAM/fastq_based/"), shell=True)         
-                subprocess.call(SORT % dict(sample=sample, output_path="BAM/contig_based/"), shell=True)         
+                subprocess.call(BWM_MEM_CONTIGS % dict(reference="fasta/selected_references/" + fasta, sample_fasta="fasta/selected_contigs/"+fasta, out_file=sample, output_path="BAM/contig_based/",threads = self.threads), shell=True) #map to reference
+                subprocess.call(BWM_MEM_FASTQ % dict(reference="fasta/selected_references/" + fasta ,r1=self.fastq+r1, r2=self.fastq+r2, out_file=sample, output_path="BAM/fastq_based/",threads = self.threads), shell=True) #map to reference
+                subprocess.call(FILTER_BAM % dict(sample=sample,filter_out_code = filter_out_code, output_path="BAM/fastq_based/",threads = self.threads), shell=True) #keep mapped reads
+                subprocess.call(FILTER_BAM % dict(sample=sample,filter_out_code = filter_out_code, output_path="BAM/contig_based/",threads = self.threads), shell=True) #keep mapped reads
+                subprocess.call(SORT % dict(sample=sample, output_path="BAM/fastq_based/",threads = self.threads), shell=True)         
+                subprocess.call(SORT % dict(sample=sample, output_path="BAM/contig_based/",threads = self.threads), shell=True)   
+                subprocess.call(CHIMER % dict(sample=sample, output_path="BAM/fastq_based/"), shell=True)
+                subprocess.call(CHIMER % dict(sample=sample, output_path="BAM/contig_based/"), shell=True)
     
     #override
     #run general pipeline function twice (contigs based and fastq based)
-    def cns_depth(self, bam_path, depth_path, cns_path, cns5_path):
+    def cns_depth(self, bam_path, depth_path, cns_path, cns5_path, thresh):
         contig_dir = "contig_based/"
         fastq_dir = "fastq_based/"
         create_dirs([depth_path+contig_dir, depth_path+fastq_dir, cns_path+contig_dir, cns_path+fastq_dir, cns5_path+contig_dir,cns5_path+fastq_dir])
-        super().cns_depth(bam_path+contig_dir, depth_path+contig_dir, cns_path+contig_dir, cns5_path+contig_dir)
-        super().cns_depth(bam_path+fastq_dir, depth_path+fastq_dir, cns_path+fastq_dir, cns5_path+fastq_dir)
-    
-    #override
-    def variant_calling(self, bam_path, vcf_path):
-        super().variant_calling(bam_path = "BAM/contig_based/", vcf_path= "VCF/contig_based/")
-        super().variant_calling(bam_path = "BAM/fastq_based/", vcf_path= "VCF/fastq_based/")
+        super().cns_depth(bam_path+contig_dir, depth_path+contig_dir, cns_path+contig_dir, cns5_path+contig_dir, thresh)
+        super().cns_depth(bam_path+fastq_dir, depth_path+fastq_dir, cns_path+fastq_dir, cns5_path+fastq_dir, thresh)
+    def mafft(self, not_aligned, aligned):
+        return
     
     #override
     #write report twice (contigs based and fastq based)
     def qc_report(self, bam_path, depth_path, output_report, vcf=0):
         contig_dir = "contig_based/"
         fastq_dir = "fastq_based/"        
-        super().results_report(bam_path+contig_dir, depth_path+contig_dir, output_report+"_contig_based")
-        super().results_report(bam_path+fastq_dir, depth_path+fastq_dir, output_report+"_fastq_based")
+        super().qc_report(bam_path+contig_dir, depth_path+contig_dir, output_report+"_contig_based")
+        super().qc_report(bam_path+fastq_dir, depth_path+fastq_dir, output_report+"_fastq_based")
         
         
 
