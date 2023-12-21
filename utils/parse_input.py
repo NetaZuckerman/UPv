@@ -16,7 +16,7 @@ def parser():
         parser.add_argument('-mr','--multi_ref', action='store_true', help='multi fasta reference') #
         parser.add_argument('--drop_joint_reads', action='store_true', help='drop reads mapped to more than one refenerece when mapping against multi-fasta reference. default: False') #
         parser.add_argument('-f', '--flu', action='store_true', help="influenza segements analysis") #store_true will store the argument as true
-        parser.add_argument('-d', '--de_novo', action='store_true', help="de-novo analysis") #store_true will store the argument as true
+        parser.add_argument('--de_novo', nargs='?', const=True, default=False, help='Perform de-novo analysis')
         parser.add_argument('--polio', action='store_true', help="PolioVirus analysis") #store_true will store the argument as true
         parser.add_argument('--HIV', help="HIV analysis for genes: PR, RT and Integrase. do not provide reference sequnce. provide format table.") #store_true will store the argument as true
         parser.add_argument('--HSV', action='store_true', help="HSV analysis for genes: UL23, UL30, UL42. do not provide reference sequnce.") #store_true will store the argument as true

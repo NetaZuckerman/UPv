@@ -31,9 +31,10 @@ RUN_BLAST = "blastn -db %(db)s -query %(query)s -out %(output_file)s -outfmt \"6
 
 class de_novo(general_pipe):
       
-    def __init__(self, reference, fastq, threads):
+    def __init__(self, reference, fastq, threads, virus_name):
         super().__init__(reference, fastq, threads) 
-        # create_dirs(["BAM/fastq_based", "BAM/contig_based", "VCF/fastq_based", "VCF/contig_based"]) #temp comment
+        self.virus_name = virus_name if not virus_name==True else ''
+        create_dirs(["BAM/fastq_based", "BAM/contig_based", "VCF/fastq_based", "VCF/contig_based"]) #temp comment
         
     #run spades on paired end fastq files. the list must contain sample, r1 r2 file names 
     def run_spades(self):
@@ -53,9 +54,9 @@ class de_novo(general_pipe):
             dataframe.to_csv("blast/" + spades_result + ".csv", encoding='utf-8', index=False)
 
     #load blast output and choose the reference of the longest highest score contig. 
-    def choose_reference_filter_contigs(self, virus_name =''):
+    def choose_reference_filter_contigs(self):
         create_dirs(["fasta/","fasta/selected_contigs","fasta/all_contigs","fasta/selected_references","BAM/fastq_based/","BAM/contig_based/"])
-        sample_ref = {} #dict of the selected reference for each sample
+        sample_ref = pd.DataFrame(columns=["sample", "reference_id", "reference_name"]) #df of the selected reference for each sample
         for sample, r1, r2 in self.r1r2_list:   
            if os.stat('blast/'+sample+'.txt').st_size == 0:
                continue
@@ -63,10 +64,13 @@ class de_novo(general_pipe):
            df.columns = ["contig_seq-id", "reference_seq-id", "reference_title", "contig_length" ,"coverage(contig_to_ref)", "raw_score", "bit_score"] 
            #filter the highest score of each contig
            df = df[~df['reference_title'].str.contains('retrovirus|endogenous|phage', case=False)]
-           prefered_virus = df = df[df['reference_title'].str.contains(virus_name, case=False)]
-           prefered_virus_ref = df = df[df['reference_title'].str.contains('complete', case=False)]
-           approved_fields = df.groupby("contig_seq-id")['raw_score'].max()
-           df = df[df['raw_score'].isin(approved_fields)]
+           prefered_virus = df[df['reference_title'].str.contains(self.virus_name, case=False)]
+           prefered_virus_ref =  prefered_virus[prefered_virus['reference_title'].str.contains('complete', case=False)]
+           if len(prefered_virus_ref) > 0:
+               df = prefered_virus_ref
+               
+           best_refs = df.groupby("contig_seq-id")['raw_score'].max()
+           df = df[df['raw_score'].isin(best_refs)]
            df.to_csv('blast/filtered_'+sample+".csv", index=False)
            
            #create multi-fasta contains only the contigs blast found
@@ -82,16 +86,19 @@ class de_novo(general_pipe):
            filtered_file.close()
        #shutil.rmtree("spades/spades_results/")
             #select the reference of the longest contig
-           reference = df.loc[df['contig_length'].idxmax()]['reference_seq-id']#.split("|")[1].split("|")[0]
-           reference = reference.split("|")[1].split("|")[0] if "|" in reference else reference
-           sample_ref.update({sample:reference})
+           reference_id = df.loc[df['contig_length'].idxmax()]['reference_seq-id']
+           reference_id = reference_id.split("|")[1].split("|")[0] if "|" in reference_id else reference_id
+           reference_name = df.loc[df['contig_length'].idxmax()]['reference_title']
+           sample_ref.loc[len(sample_ref)] = [sample,reference_id, reference_name]
         return sample_ref
     
     #export reference sequence fasta 
-    def import_references(self, sample_ref):
-        for sample, ref in sample_ref.items():
+    def import_references(self):
+        for i, row in self.sample_ref.iterrows():
+            ref_id = row["reference_id"]
+            sample = row["sample"]
             for record in SeqIO.parse(self.reference, "fasta"):
-                if ref in record.description:
+                if ref_id in record.description:
                     ref_file = open("fasta/selected_references/"+sample+".fasta", 'a')
                     SeqIO.write(record,ref_file,"fasta")
                     ref_file.close()
@@ -101,8 +108,8 @@ class de_novo(general_pipe):
     def mapping(self):
         # self.run_spades()
         # self.run_blast()
-        sample_ref = self.choose_reference_filter_contigs()
-        self.import_references(sample_ref)
+        self.sample_ref = self.choose_reference_filter_contigs()
+        self.import_references()
         
         filter_out_code = 4
         
@@ -128,20 +135,22 @@ class de_novo(general_pipe):
         create_dirs([depth_path+contig_dir, depth_path+fastq_dir, cns_path+contig_dir, cns_path+fastq_dir, cns5_path+contig_dir,cns5_path+fastq_dir])
         super().cns_depth(bam_path+contig_dir, depth_path+contig_dir, cns_path+contig_dir, cns5_path+contig_dir, thresh)
         super().cns_depth(bam_path+fastq_dir, depth_path+fastq_dir, cns_path+fastq_dir, cns5_path+fastq_dir, thresh)
+        return
+    
+    #override
     def mafft(self, not_aligned, aligned):
         return
     
     #override
     #write report twice (contigs based and fastq based)
     def qc_report(self, bam_path, depth_path, output_report, vcf=0):
-        contig_dir = "contig_based/"
-        fastq_dir = "fastq_based/"        
-        super().qc_report(bam_path+contig_dir, depth_path+contig_dir, output_report+"_contig_based")
-        super().qc_report(bam_path+fastq_dir, depth_path+fastq_dir, output_report+"_fastq_based")
+        for report_type in ['contig_based', 'fastq_based']:  
+            super().qc_report(bam_path+report_type+'/', depth_path+report_type+'/', output_report + "_" + report_type)
         
-        
-
-        
+            #add redference columns 
+            report = pd.read_csv(output_report+"_"+ report_type + ".csv")
+            report = self.sample_ref.merge(report, how='left', on='sample')
+            report.to_csv(output_report + "_" + report_type + '.csv', index = False)    
         
         
         

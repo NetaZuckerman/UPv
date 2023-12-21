@@ -48,7 +48,7 @@ if __name__ == "__main__":
                 pipe = flu(reference,fastq, threads)
             
             elif de_novo_flag:
-                pipe = de_novo(reference,fastq, threads) 
+                pipe = de_novo(reference,fastq, threads, de_novo_flag) 
 
             elif polio_flag:
                 pipe = polio(reference,fastq, threads)

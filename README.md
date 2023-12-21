@@ -38,13 +38,8 @@ The results are the parsed gb file and the mutations report. \
  `python3 upv.py -i /input/path -r path/to/ref.fa -gb path/to/file.gb --mutation_table --mini`
 
 #### -v|--vcf (optional)
-Generate a variant calling file. \
-
-#### -mr|--multi_ref (optional)
-map reads to multi-fasta reference.
-
-#### --drop_joint_reads (optional)
-drop reads mapped to more than one refenerece when mapping against multi-fasta reference. 
+Generate a variant calling file using gatk4. \
+This step fill the identity column in QC/report.csv file by counting the mutations in the vcf.
 
 #### --flu (optional)
 Run the pipeline for influenza viruses. \
