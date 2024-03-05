@@ -22,8 +22,10 @@ from utils.utils import SPLIT
 from utils.summerize_coverage import summerize_coverage
 
 class polio(general_pipe):
-    def __init__(self, reference, fastq, threads):
-        super().__init__(reference, fastq, threads) 
+    def __init__(self, reference, fastq, minion, threads):
+        super().__init__(reference, fastq, minion, threads) 
+        if self.minion:
+            raise ValueError("polio pipeline only works with illumina reads. for minion use PoP.")
         utils.create_dirs([self.fastq+"polio_reads","BAM/fastq_based", "BAM/contig_based"]) #temp comment
 
     #filter the fastq files to contain only mapped reads 
@@ -40,7 +42,8 @@ class polio(general_pipe):
         None.
 
         '''
-        for sample, r1, r2 in self.r1r2_list:
+        for sample, r1 in self.sample_fq_dict.items():
+            r2 = r1.replace("R1","R2")
             subprocess.call(FILTER % dict(threads = self.threads, reference=self.reference, r1=self.fastq + r1, r2=self.fastq + r2, output_path=self.fastq+"polio_reads/", sample=sample), shell=True)
             subprocess.call(BAM2FQ % dict(file=self.fastq+"polio_reads/" + sample), shell=True)
             os.remove(self.fastq+"polio_reads/" + sample + ".bam")
@@ -53,7 +56,7 @@ class polio(general_pipe):
         self.filter_non_polio()
         self.fastq = self.fastq + "polio_reads/"
 
-        for sample, r1, r2 in self.r1r2_list:
+        for sample, r1 in self.sample_fq_dict.items():
             
             subprocess.call(BWM_MEM_FASTQ % dict(threads = self.threads, reference=self.reference ,fastq=self.fastq+sample+".fastq", out_file=sample, output_path="BAM/fastq_based/"), shell=True) #map to reference
             subprocess.call(SPLIT % dict(bam="BAM/fastq_based/"+sample+".bam"), shell=True)
@@ -71,12 +74,17 @@ class polio(general_pipe):
         
     #override
     #run general pipeline function twice (contigs based and fastq based)
-    def cns_depth(self, bam_path, depth_path, cns_path, cns5_path, cnsThresh):
+    def cns(self, bam_path, cns_path, cns_x_path, min_depth_call, min_freq_thresh):
         contig_dir = "contig_based/"
         fastq_dir = "fastq_based/"
-        utils.create_dirs([depth_path+contig_dir, depth_path+fastq_dir, cns_path+contig_dir, cns_path+fastq_dir, cns5_path+contig_dir,cns5_path+fastq_dir])
-        super().cns_depth(bam_path+fastq_dir, depth_path+fastq_dir, cns_path+fastq_dir, cns5_path+fastq_dir, cnsThresh)
-       
+        utils.create_dirs([cns_path+contig_dir, cns_path+fastq_dir, cns_x_path+contig_dir,cns_x_path+fastq_dir])
+        super().cns(bam_path+fastq_dir, cns_path+fastq_dir, cns_x_path+fastq_dir, min_depth_call, min_freq_thresh)
+   
+    def depth(self, bam_path, depth_path):
+        contig_dir = "contig_based/"
+        fastq_dir = "fastq_based/"
+        utils.create_dirs([depth_path+contig_dir, depth_path+fastq_dir])
+        super().depth(bam_path+fastq_dir, depth_path+fastq_dir)
     #override TODO - tests
     def variant_calling(self, bam_path, vcf_path):
         utils.create_dirs(["VCF/fastq_based", "VCF/contig_based"])

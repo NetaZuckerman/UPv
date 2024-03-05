@@ -8,6 +8,7 @@ Created on Mon Jan 10 11:52:43 2022
 
 from pipelines.generalPipeline import general_pipe
 from viruses.flu import flu
+from viruses.flu_de_novo import flu_de_novo
 from pipelines.deNovo import de_novo
 from pipelines.multiRef import multi_ref
 from viruses.polio import polio
@@ -16,6 +17,7 @@ from viruses.hsv import hsv
 from utils import utils, parse_gb_file, parse_input
 from mutations import signatures
 import os
+import sys
 
 
 SCRIPT_PATH = os.path.dirname(__file__) +'/'
@@ -24,49 +26,56 @@ if __name__ == "__main__":
     
     DEBUG = False
     
-    reference, fastq, threads, flu_flag, de_novo_flag, polio_flag, cmv_flag, hiv_flag, \
-        hsv_flag, gb_file, regions_file, mutations_flag, mini, \
-            vcf, cnsThresh, multi_ref_flag, drop_joint_reads = parse_input.parser()
+    reference, fastq, threads, flu_flag, de_novo_flag, flu_de_novo_flag, polio_flag, cmv_flag, hiv_flag, \
+        hsv_flag, minion_flag, gb_file, regions_file, mutations_flag, mini, \
+            vcf, cns_min_freq_thresh, cns_min_depth_call, multi_ref_flag, drop_joint_reads = parse_input.parser()
     
-    dirs=['BAM','QC','CNS','CNS_5','QC/depth', 'alignment'] if not hiv_flag else ['BAM','QC','CNS','QC/depth', 'alignment']
+    with open("log.txt",'w') as log:
+        log.write("Working Directory: \n" + os.getcwd() + '\n\n')
+        log.write("Command: \n" + ' '.join(sys.argv))
+    
+    dirs=['BAM','QC','CNS','CNS_' + cns_min_depth_call ,'QC/depth', 'alignment'] if not hiv_flag else ['BAM','QC','CNS','QC/depth', 'alignment']
     
     if hiv_flag:
         reference = SCRIPT_PATH + "viruses/refs/K03455.1_HIV.fasta"
         vcf = True
-    elif not reference:
+    elif not reference and not hsv_flag:
         raise ValueError("reference sequence is required.")
         
     if not mini:      
         utils.create_dirs(dirs) 
         
-        if fastq and reference and not mini:
+        if fastq and not mini:
             if not fastq.endswith("/"):
                 fastq = fastq+"/"
         
             
             if flu_flag:
-                pipe = flu(reference,fastq, threads)
+                pipe = flu(reference,fastq, minion_flag, threads)
             
             elif de_novo_flag:
-                pipe = de_novo(reference,fastq, threads, de_novo_flag) 
-
+                pipe = de_novo(reference,fastq, minion_flag, threads, de_novo_flag) 
+            
+            elif flu_de_novo_flag:
+                pipe = flu_de_novo(reference, fastq, minion_flag, threads)
+            
             elif polio_flag:
-                pipe = polio(reference,fastq, threads)
+                pipe = polio(reference,fastq, minion_flag, threads)
             
             elif hiv_flag:
-                pipe = hiv(reference,fastq, threads, hiv_flag)
+                pipe = hiv(reference,fastq, minion_flag, threads, hiv_flag)
                 
             elif hsv_flag:
-                pipe = hsv(reference,fastq, threads)
-            
+                pipe = hsv(reference,fastq, minion_flag, threads)
+
             elif multi_ref_flag:
-                pipe = multi_ref(reference,fastq, threads, drop_joint_reads)
+                pipe = multi_ref(reference,fastq, minion_flag, threads, drop_joint_reads)
     
             else:
-                pipe = general_pipe(reference,fastq, threads)
+                pipe = general_pipe(reference,fastq, minion_flag, threads)
             
            
-            #mapping 
+            # mapping 
             pipe.mapping()
             
         
@@ -74,16 +83,17 @@ if __name__ == "__main__":
                 utils.create_dirs(["VCF"])
                 pipe.variant_calling()
                 
-            pipe.cns_depth("BAM/","QC/depth/","CNS/","CNS_5/", cnsThresh) #temp comment
+            pipe.cns("BAM/","CNS/","CNS_" + cns_min_depth_call + '/', cns_min_depth_call, cns_min_freq_thresh) #temp comment
+            
+            pipe.depth("BAM/","QC/depth/")
             
             pipe.mafft("alignment/all_not_aligned.fasta", "alignment/all_aligned.fasta")
-       
             
             pipe.qc_report("BAM/", "QC/depth/", 'QC/QC_report') #temp comment
             
-
     else: #yes mini
-        utils.create_dirs(["alignment"])
+        if not os.path.exists("alignment"):    
+            utils.create_dirs(["alignment"])
         utils.mafft(reference, fastq, "alignment/all_aligned.fasta")
         
     if gb_file:
@@ -91,8 +101,6 @@ if __name__ == "__main__":
         regions_file = gb_file.replace(".gb", "_regions.csv")
 
     if mutations_flag or mini:
-        if not gb_file and not regions_file:
-            raise ValueError("gene bank file or regions file is required.")
         utils.create_dirs(["reports"])
         signatures.run("alignment/all_aligned.fasta", regions_file, "reports/mutations.xlsx")
     

@@ -17,8 +17,8 @@ SPLIT = "bamtools split -in %(bam)s -reference"
 
 class multi_ref (general_pipe):
 
-    def __init__(self, reference, fastq, threads, drop_joint_reads= False):
-        super().__init__(reference, fastq, threads)    
+    def __init__(self, reference, fastq, minion, threads, drop_joint_reads= False):
+        super().__init__(reference, fastq, minion, threads)    
         self.drop_joint_reads = drop_joint_reads
    
     def mapping(self):

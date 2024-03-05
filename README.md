@@ -14,6 +14,12 @@ Don't worry about indexing the fasta file, it happens automatically.
 
  `python3 upv.py -i /input/path -r path/to/ref.fa`
 
+#### -p|--process [INT] (optional)
+Number of processes to run in parallel. \
+Note that only some of the pipeline will run in multiprocessing. \
+Be careful not to run too many processes on your CPU. \
+ `python3 upv.py -i /input/path -r path/to/ref.fa -p 3`
+
 #### --gb_file (optional)
 Parse a gene bank file. \
 Gene bank file can be downloaded from ncbi. \

@@ -25,8 +25,8 @@ rt_reg = (2661,3294)
 int_reg = (4230, 5094)
 
 class hiv(general_pipe):
-    def __init__(self, reference, fastq, threads, metadata):
-        super().__init__(reference, fastq, threads)    
+    def __init__(self, reference, fastq, threads, minion, metadata):
+        super().__init__(reference, fastq, minion, threads)    
         self.metadata = metadata
  
     
@@ -70,9 +70,7 @@ class hiv(general_pipe):
         
 
     #@override
-    def cns_depth(self, bam_path, depth_path, cns_path, cns5_path, cnsThresh):
-        
-    
+    def cns(self, bam_path, cns_path, cns_x_path, min_depth_call, min_freq_thresh):
         
         vcf_path = bam_path.replace("BAM","VCF")
         for file in os.listdir(vcf_path):
@@ -92,11 +90,6 @@ class hiv(general_pipe):
                
                 with open(cns_path +sample + ".fasta", 'w') as f:
                     f.write(">" + sample + '\n' + cns + '\n')
-            
-        for bam_file in os.listdir(bam_path): 
-            if "sorted" in bam_file:
-                sample = bam_file.split(".bam")[0].replace(".mapped.sorted", "")
-                subprocess.call(DEPTH % dict(bam_path=bam_path, bam_file=bam_file, depth_path=depth_path, sample=sample), shell=True) 
             
     
     def mafft(self, not_aligned, aligned):

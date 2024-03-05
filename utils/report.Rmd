@@ -1,0 +1,239 @@
+---
+title: "UPv"
+params:
+  output_dir: "UPv-report.html" 
+  depth_path: "QC/depth/"
+  qc_path: "QC/QC_report.csv"
+output:
+  html_document:
+  output_dir: "`r params$output_dir`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning = FALSE, message = FALSE)
+
+qc_path <- params$qc_path
+depth_path <- params$depth_path
+
+#setwd("/mnt/project2/PersonalFolders/hagar/upv_test/")
+library(ggplot2)
+library(plotly)
+library(grid)
+library(gridExtra) 
+library(cowplot) 
+library(DT)
+library(dplyr)
+library(gggenes)
+library(readxl)
+library(tidyr)
+library(cowplot)
+library(reshape2)
+
+```
+
+
+```{r, echo=FALSE, message = FALSE, warnings = FALSE}
+qc = read.csv(qc_path)
+
+names(qc) <- c("Sample", "Mapped Read (%)", "Mapped Read Count", "Total Reads", "Covered Bases",
+               "Coverage (%)", "Coverage (depth>5)", "Mean Depth","Max depth", "Min depth", "Chimeric Read_ Count")
+datatable(qc, filter = "top", editable = TRUE, options = list(pageLength = 100))
+```
+
+
+```{r, echo=FALSE, message = FALSE, warnings = FALSE, fig.width=10}
+qc$`Unmapped Read (%)` <- 100 - qc$`Mapped Read (%)`
+mappin_data <- subset(qc, select =  c("Sample","Mapped Read (%)","Unmapped Read (%)"))
+melt_data <- melt(mappin_data, id = c("Sample")) 
+
+ggplot(melt_data, aes(x = value, y = as.factor(Sample), fill = variable)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(title = "Mapping Percentages",
+       x = "Percentage",
+       y = "Sample") +
+    scale_fill_manual(values = c("Mapped Read (%)" = "#F6C7B3", "Unmapped Read (%)" = "grey")) +
+  theme_classic()
+
+qc$`Unmapped Read Count` <- qc$`Total Reads` - qc$`Mapped Read Count`
+mappin_data <- subset(qc, select =  c("Sample","Unmapped Read Count","Mapped Read Count"))
+melt_data <- melt(mappin_data, id = c("Sample")) 
+
+ggplot(melt_data, aes(x = value, y = as.factor(Sample), fill = variable)) +
+  geom_bar(stat = "identity", position = "stack") +  
+  labs(title = "Number of Reads",
+       x = "# of Mapped Reads",
+       y = "Sample") + 
+scale_fill_manual(values = c("Mapped Read Count" = "#F6C7B3", "Unmapped Read Count" = "grey"),
+                    name = "Legend", 
+                    labels = c("Mapped Read Count" = "Mapped", "Unmapped Read Count" = "Unmapped")) +  # Change legend labels
+    theme_classic()
+
+```
+
+
+Coverage analysis \n
+
+```{r, echo=FALSE, message = FALSE, warnings = FALSE, fig.width=10,fig.height=2}
+# Get a list of all files in the depth folder
+depth_files <- list.files(path = depth_path, pattern = "\\.txt", full.names = TRUE)
+
+# Create an empty list to store plots
+plot_list <- list()
+
+
+# Create a seperated legend
+data <- data.frame( 
+  Xdata = rnorm(2), Ydata = rnorm(2), 
+  Legend = c("Depth = 0", "Depth > 0")) 
+p <- ggplot(data, aes(Xdata, Ydata, color = Legend)) +    
+  geom_point(size = 7) +
+  scale_color_manual(values = c("#CB4335", "#2ECC71")) + theme_classic()
+legend <- get_legend(p)                 
+vp <- viewport(x = 0.2, y = 0.5, width = 0.2, height = 0.2, just = c("right", "center"))
+grid.newpage()
+pushViewport(vp)
+grid.draw(legend)
+popViewport()
+
+# Iterate through each file
+for (depth_file in depth_files) {
+  # Extract the file name without extension
+  file_name <- tools::file_path_sans_ext(basename(depth_file))
+  
+  # Read data from the current file
+  depth <- read.csv(depth_file, sep = "\t", header = FALSE, col.names = c("ref", "Position", "Depth"))
+
+
+
+  # Create the ggplot
+  depth_plot <- ggplot(depth, aes(x = Position, y = Depth)) +
+    geom_area(aes(fill = Depth), fill = "#2ECC71") +
+    geom_line(y = 0, color = ifelse(depth$Depth == 0, "#CB4335", "#2ECC71"), size = 1) +
+    theme_classic() +
+    theme(legend.position = "none") +
+    ylab("Depth") + 
+    ggtitle(paste("Sample:", file_name))
+  
+  plot_list[[paste("depth",file_name)]] <- depth_plot
+}
+
+#print
+for (plot in plot_list) {
+  print((plot))
+}
+
+```
+ \n\n\n
+
+
+
+
+Genes 
+
+
+```{r, echo=FALSE, message = FALSE, warnings = FALSE, fig.width=10,fig.height=6}
+regions = read.csv("covid19_regions.csv")
+plot_data <- data.frame(
+  x = c(regions$start, regions$end),
+  region = rep(regions$region, each = 2))
+
+regions <- regions %>%
+  mutate(overlap = ifelse(row_number() > 1 & start < lag(end), 1, 0)) %>%
+  mutate(y = cumsum(overlap))
+
+##lots of overlaps in genes positions, split the overlaps to facets.
+if (max(regions$y) > 3){
+  
+  regions$y = as.factor(regions$y)
+  ggplot(regions, aes(xmin = start, xmax = end, y =
+                                            "", fill = region, label = region)) +
+  geom_gene_arrow(arrowhead_height = unit(3, "mm"), arrowhead_width = unit(1, "mm")) +
+  geom_gene_label(align = "left") +
+  facet_wrap(~ y, scales = "free", ncol = 1) +
+  xlim(1,max(regions$end))+
+  theme_genes() 
+
+} else{
+  ggplot(regions, aes(xmin = start, xmax = end, y =
+                                            "", fill = region, label = region)) +
+  geom_gene_arrow(arrowhead_height = unit(3, "mm"), arrowhead_width = unit(1, "mm")) +
+  geom_gene_label(align = "left") +
+  xlim(1,max(regions$end))+
+  theme_genes()
+}
+
+```
+
+ \n\n\n
+
+Mutation Analysis
+
+
+```{r, echo=FALSE, message = FALSE, warnings = FALSE, fig.width=20,fig.height=30}
+df = read_excel('mutations.xlsx')
+
+ref_name = sub("_NT$", "", colnames(df))[4]
+
+df_long <- df[, 5:ncol(df)] %>% # take df from 5th column in order to not count the reference. 
+  gather(key = "sample", value = "NT", ends_with("_NT") )
+df_long <- cbind(df[, 1:4], df_long) #add the first 4 columns.
+
+# Create a new column 'color' based on the condition
+df_long$color <- ifelse(df_long$NT == df_long[, 4], "match", 
+                        ifelse(df_long$NT %in% c('N', '-'), "N/-", "mismatch"))
+
+
+df_long$position <- paste(df_long$nt_position_on_genome, ', ',df_long$nt_position_on_gene, sep='')
+
+
+
+plot1 <- ggplot(df_long, aes(x = sample, y = as.factor(position), fill = factor(color))) +
+  geom_tile(color = "black", size = 0.5) +
+  geom_text(aes(label = as.character(position)),
+            color = "white", size = 4, hjust = 0.5, vjust = 0.2) +
+  scale_fill_manual(values = c("match" = "#ACD0C0", "mismatch" = "#FD8A8A", "N/-" = "grey"), na.value = "white", name = "") +
+  facet_grid(gene_name ~ ., scales = "free_y", space = "free_y") +
+  labs(title = "Nucleotide Mutations",
+       x = "Sample",
+       y = "Nucleotide Positions (on gemone, on gene)") +
+  theme_classic() + 
+  theme(legend.position="top") 
+
+#####################AA mut table
+
+
+
+aa_ref_col = paste(ref_name, "_AA", sep='')
+df_long <- df %>%
+ select(-matches(paste(ref_name, "_AA", sep='')))  %>%
+  gather(key = "sample", value = "AA", ends_with("_AA"))
+df_long <- cbind(df[,aa_ref_col], df_long) 
+
+# Create a new column 'color' based on the condition
+df_long$color <- ifelse(df_long$AA == df_long[,aa_ref_col] , "silent", 
+                        ifelse(df_long$AA %in% c('X', '-'), "unknown", "replacement"))
+
+
+plot2 <- ggplot(df_long, aes(x = sample, y = as.factor(aa_position_on_gene), fill = factor(color))) +
+  geom_tile(color = "black", size = 0.5) +
+  geom_text(aes(label = ifelse(color == "replacement", as.character(aa_group), "")),
+            color = "white", size = 4, hjust = 0.5, vjust = 0.2) +
+  scale_fill_manual(values = c("silent" = "#ACD0C0", "replacement" = "#FD8A8A", "unknown" = "grey"), na.value = "white", name = "") +
+  facet_grid(gene_name ~ ., scales = "free_y", space = "free_y") +
+  labs(title = "Amino Acid Mutations",
+       x = "Sample",
+       y = "Amino Acid Position on Gene") +
+  theme_classic() + 
+  theme(legend.position="top") 
+
+
+# Combine the plots
+combined_plot <- plot_grid(plot1, plot2, ncol = 2, align = "h")
+
+# Print the combined plot
+print(combined_plot)
+
+```
+
+
+

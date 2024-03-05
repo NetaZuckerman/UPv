@@ -14,21 +14,23 @@ import pysam
 from statistics import mean
 import csv
 from utils import utils
+import shutil
 import pandas as pd
+
+MAIN_SCRIPT_DIR = os.path.dirname(__file__)+'/../'
 
 
 #alignment conmmands
 INDEX = "bwa index %(reference)s"
 BWM_MEM = "bwa mem -v1 -t %(threads)s %(reference)s %(r1)s %(r2)s | samtools view -@ %(threads)s -b - > %(output_path)s%(sample)s.bam"
+MINIMAP = "minimap2 -ax map-ont %(ref)s %(fastq_dir)s/*.fastq* > %(output)s.bam"
 FILTER_BAM = "samtools view -@ %(threads)s -b -F %(filter_out_code)s %(output_path)s%(sample)s.bam > %(output_path)s%(sample)s.mapped.bam"
 SORT = "samtools sort -@ %(threads)s %(output_path)s%(sample)s.mapped.bam -o %(output_path)s%(sample)s.mapped.sorted.bam"
 CHIMER = "samtools view %(output_path)s%(sample)s.bam |  grep 'SA:' > %(output_path)s%(sample)s.chimeric_reads.txt"
 DEPTH = "samtools depth -a %(bam_path)s%(bam_file)s > %(depth_path)s%(sample)s.txt"
-CNS = "samtools mpileup -A %(bam_path)s%(bam_file)s | ivar consensus -t %(cnsThresh)s -m 1 -p %(cns_path)s%(sample)s.fa"
-CNS5 = "samtools mpileup -A %(bam_path)s%(bam_file)s | ivar consensus -t %(cnsThresh)s -m 5 -p %(cns5_path)s%(sample)s.fa"
+CNS = "samtools mpileup -A %(bam_path)s%(bam_file)s | ivar consensus -t %(min_freq_thresh)s -m %(min_depth_call)s -p %(cns_path)s%(sample)s.fa"
 #variants
 VCF = "bcftools mpileup -d 8000 --skip-indels -f %(ref)s %(bam)s -a AD,DP | sed '/^#/d' > %(vcf)s"
-
 
 #MAFFT commands
 ALL_NOT_ALIGNED =   "cat %(dir)s > alignment/all_not_aligned.fasta"
@@ -41,10 +43,14 @@ BREADTH_CNS5 = "$(cut -f3 QC/depth/%(sample)s.txt | awk '$1>5{c++} END{print c+0
 class general_pipe():
     
     
-    def __init__(self, reference, fastq, threads):
+    def __init__(self, reference, fastq, minion,threads):
         self.reference = reference
         self.fastq = fastq
-        self.r1r2_list = utils.get_r1r2_list(self.fastq)
+        self.minion = minion
+        if not minion:
+            self.sample_fq_dict = utils.get_sample_fq_dict(self.fastq)
+        else:
+            self.sample_fq_dict = utils.get_barcodes(minion)
         self.threads = threads
 
 
@@ -63,9 +69,17 @@ class general_pipe():
         subprocess.call(INDEX % dict(reference=self.reference), shell=True)
 
         filter_out_code = 2052
-         
-        for sample, r1, r2 in self.r1r2_list:
-            subprocess.call(BWM_MEM % dict(threads = self.threads, reference=self.reference,r1=self.fastq + r1, r2=self.fastq + r2, sample=sample, output_path="BAM/"), shell=True) #map to reference
+        
+        for sample, fq in self.sample_fq_dict.items():
+            if self.minion:
+                barcode = fq
+                subprocess.call(MINIMAP % dict(ref=self.reference, fastq_dir=self.fastq+barcode,\
+                                               output="BAM/"+sample), shell=True)
+            else:
+                r1 = fq
+                r2 = r1.replace("R1","R2")
+                subprocess.call(BWM_MEM % dict(threads = self.threads, reference=self.reference,r1=self.fastq + r1, r2=self.fastq + r2, sample=sample, output_path="BAM/"), shell=True) #map to reference
+            
             subprocess.call(FILTER_BAM % dict(threads = self.threads, sample=sample, filter_out_code = filter_out_code, output_path="BAM/"), shell=True) #keep reads according to the filter code: https://broadinstitute.github.io/picard/explain-flags.html
             subprocess.call(SORT % dict(threads = self.threads, sample=sample, output_path="BAM/"), shell=True)         
             #chimeric reads: find reads that where mapped to more then one region in the genome
@@ -90,13 +104,15 @@ class general_pipe():
                 vcf_file = vcf_path + sample + ".vcf"
                 subprocess.call(VCF % dict(bam=bam_path + bam, ref=self.reference, vcf= vcf_file ), shell=True) 
                 vcf = pd.read_csv(vcf_file, sep='\t', names=["ref_id",	"pos",	"id",	"ref",	"alt",	"qual"	,"filter",	"info"	,"format", "details"])
+                if len(vcf) == 0:
+                    continue
                 #process alt nucleotides accurance
                 alts = vcf["alt"].str.split(",",expand=True)
                 # add column if not exist
                 if 2 not in alts.columns:
                     alts[2] = None
                 cols = ["alt" + str(x) for x in alts.columns]
-                alts.set_axis(cols, axis=1,inplace=True)
+                alts = alts.set_axis(cols, axis=1)
                 vcf = pd.concat([vcf, alts], axis=1)
                 
                 #process each nucleotide depth
@@ -107,12 +123,13 @@ class general_pipe():
                 
                 
                 cols = ["depth" + str(x) for x in depths.columns]
-                depths.set_axis(cols, axis=1,inplace=True)
+                depths = depths.set_axis(cols, axis=1)
+                
                 vcf = pd.concat([vcf, depths], axis=1)
 
                 #get A G C T counts
                 final_df = pd.DataFrame(columns=["position", "ref", "A",  "G", "C", "T"])
-                for i, row in vcf.iterrows():
+                for i, row in vcf.iterrows(): 
                     counts = {"position":row["pos"],
                      "ref": row["ref"],
                         row["ref"]:row["depth0"],
@@ -139,35 +156,51 @@ class general_pipe():
                 final_df.to_csv(vcf_path + sample + ".csv", index = False)
                 
     #find mapping depth and consensus sequence 
-    def cns_depth(self, bam_path, depth_path, cns_path, cns5_path, cnsThresh):
+    def cns(self, bam_path, cns_path, cns_x_path, min_depth_call, min_freq_thresh):
         '''
         Generate consensus sequences and calculate aligning depths from a bam file.
+        min_depth_call: ivar consensus -m is  Minimum depth to call consensus. 
+        in this pipeline minimum depth 1 is always generated and addional minimum depth is avaialble in the CNS_X directory (default = 5)
+        min_freq_thresh: ivar consensus -t    Minimum frequency threshold(0 - 1) to call consensus. defualt = 0.6
         '''
         for bam_file in os.listdir(bam_path):
             if "sorted" in bam_file and "bai" not in bam_file:
                 sample = bam_file.split(".mapped")[0] + bam_file.split(".sorted")[1].split(".bam")[0]
-                subprocess.call(DEPTH % dict(bam_path=bam_path, bam_file=bam_file, depth_path=depth_path, sample=sample), shell=True) 
                 #consensus
-                subprocess.call(CNS % dict(bam_path=bam_path, bam_file=bam_file, cns_path=cns_path, sample=sample, cnsThresh=cnsThresh), shell=True) 
-                subprocess.call(CNS5 % dict(bam_path=bam_path, bam_file=bam_file, cns5_path=cns5_path, sample=sample, cnsThresh=cnsThresh), shell=True)
+                #CNS - min depth to call = 1
+                subprocess.call(CNS % dict(bam_path=bam_path, bam_file=bam_file, cns_path=cns_path,
+                                           sample=sample, min_freq_thresh=min_freq_thresh, min_depth_call=1), shell=True) 
+                
+                #CNS - min depth to call = X (default = 5)
+                subprocess.call(CNS % dict(bam_path=bam_path, bam_file=bam_file, 
+                                           cns_path=cns_x_path, sample=sample, min_freq_thresh=min_freq_thresh,
+                                           min_depth_call=min_depth_call), shell=True)
+               
                 #remove qual files
                 os.remove(cns_path+sample+".qual.txt")
-                os.remove(cns5_path+sample+".qual.txt")
-                utils.fix_cns_header("CNS/")
-                utils.fix_cns_header("CNS_5/")
+                os.remove(cns_x_path+sample+".qual.txt")
+                utils.fix_cns_header(cns_path)
+                utils.fix_cns_header(cns_x_path)
+    
+    def depth(self, bam_path, depth_path):
+        for bam_file in os.listdir(bam_path):
+            if "sorted" in bam_file and "bai" not in bam_file:
+                sample = bam_file.split(".mapped")[0] + bam_file.split(".sorted")[1].split(".bam")[0]
+                subprocess.call(DEPTH % dict(bam_path=bam_path, bam_file=bam_file, depth_path=depth_path, sample=sample), shell=True) 
+    
     def mafft(self, not_aligned, aligned):
         '''
         multi-fasta align.
         cat all consensus fasta sequences and run MAFFT. the implementation of MAFFT is in utils.
 
         '''
-        subprocess.call(ALL_NOT_ALIGNED % dict(dir="CNS_5/*"), shell=True)
+        subprocess.call(ALL_NOT_ALIGNED % dict(dir="CNS/*"), shell=True)
         utils.mafft(self.reference, not_aligned, aligned)
     
     #write report.csv - mapping analysis
     #de novo flag was created to generate different output for de novo analysis, used in denovo class and polio class.
 
-    def depth(self, file, start=0, end=-1):
+    def depth_qc(self, file, start=0, end=-1):
         depths = [int(x.split('\t')[2]) for x in open(file).readlines()]
         
         #set
@@ -224,9 +257,17 @@ class general_pipe():
                     mapped_reads, mapped_percentage, cov_bases, chimer_count = self.general_qc(bam_path+bam_file, total_reads)
                     
                     #depth 
-                    max_depth, min_depth, mean_depth, cover, cns5_cover = self.depth(depth_path+sample+".txt")
+                    max_depth, min_depth, mean_depth, cover, cns5_cover = self.depth_qc(depth_path+sample+".txt")
                                         
                     writer.writerow([sample, mapped_percentage, mapped_reads, total_reads, cov_bases, cover, cns5_cover, mean_depth, max_depth, min_depth, chimer_count])
                 
         f.close()
+        # self.pdf_report(depth_path, output_report+".csv")
+    
+    def pdf_report(self, depth_path, qc_path):
+        rmd_path = os.path.join(MAIN_SCRIPT_DIR, 'utils', 'report.Rmd')
+        shutil.copy(rmd_path, os.getcwd() + "/report.Rmd")
+        rscript_command = 'Rscript -e "rmarkdown::render(\'{}\', params = list(depth_path = \'{}\', qc_path = \'{}\'))"'.format("report.Rmd", depth_path, qc_path)
+        subprocess.run(rscript_command, shell=True, check=True)
+        os.remove(os.getcwd() + "/report.Rmd")
         

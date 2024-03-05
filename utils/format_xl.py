@@ -52,11 +52,11 @@ def save_format_xl(df,num_samples,output):
     yellow_format = workbook.add_format({'bg_color':   '#FFFB00'})
     #-------------------------------------------------------------------
     #rules
-    worksheet.conditional_format(0,xl_aa_end+2, max_row, xl_aa_end+2, {'type':     'formula',
-                                       'criteria': "=$" + xl_col_to_name(xl_aa_end+3) +"1=1",
+    worksheet.conditional_format(1,xl_aa_end+2, max_row, xl_aa_end+2, {'type':     'formula',
+                                       'criteria': "=$" + xl_col_to_name(xl_aa_end+4) +"2=1",
                                        'format':   red_format})
     
-    worksheet.conditional_format(0,1, max_row, max_col-1, {'type':     'cell',
+    worksheet.conditional_format(0,3, max_row, num_samples + 3, {'type':     'cell',
                                     'criteria': 'equal to',
                                     'value':    '"N"',
                                     'format':   grey_format})
@@ -82,6 +82,6 @@ def save_format_xl(df,num_samples,output):
                                        'format':   yellow_format})
 
 
-    writer.save()
+    writer.close()
 
 

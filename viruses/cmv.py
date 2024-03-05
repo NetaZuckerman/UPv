@@ -4,7 +4,7 @@ from utils.utils import translate_table
 
 # read files
 alignment_file = "alignment/all_aligned.fasta"
-mutations_file = "cmv_hotspots.csv"
+mutations_file = "/home/hagar/UPv/viruses/refs/cmv_hotspots.csv"
 UL97 = (141798, 143921)
 UL54 = (78194, 81922)  # important - UL54 gene is on the complement strand!
 

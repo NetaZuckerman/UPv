@@ -6,10 +6,10 @@ Created on Mon Oct  9 08:05:15 2023
 @author: hagar
 """
 
-#regions
-ul30_reg = (62807, 66512) 	
-ul42_reg = (93113, 94577)
-ul23_reg = (46675, 47803)
+#regions of JN555585
+ul30_reg = (62807, 66514) 	
+ul42_reg = (93112, 94578)
+ul23_reg = (46673, 47803)
 
 
 import pandas as pd
@@ -18,14 +18,16 @@ import os
 from utils.utils import get_sequences, write_sub_fasta, create_dirs
 from mutations import signatures
 from utils.format_xl import save_format_xl
-
+import numpy as np
+import pysam
 
 SCRIPT_PATH = os.path.dirname(__file__) +'/'
 
 class hsv(general_pipe):
-    def __init__(self, reference, fastq, threads):
-        super().__init__(reference, fastq, threads)    
- 
+    def __init__(self, reference, fastq, minion, threads):
+        super().__init__(reference, fastq, minion, threads)    
+        #self.reference = SCRIPT_PATH +  "/refs/herpesvirus1_wg.fasta"
+        self.reference = "/mnt/project1/projects/HERPES/HSV/refs/JN555585.fasta"
 
 #cut by gene
     def cut_genes(self, aln_path):
@@ -68,6 +70,10 @@ class hsv(general_pipe):
         merged = mut_tbl.merge(resist, how='left', on=["gene_name","nt_position_on_gene" ,"X14112.1_NT"])
         seq_num = int((len(merged.columns) - len(resist.columns)) /2 ) -3
         save_format_xl(merged, seq_num, "reports/mutations_snp&del.xlsx")
+
+        #save only resistance mutations         
+        merged = merged[merged.filter(regex='_NT$').eq(merged['alt'], axis=0).any(axis=1)]
+        save_format_xl(merged, seq_num, "reports/resistance_mutations_snp&del.xlsx")
         
         #######resistant mutations - insertions
         res_inser = pd.read_excel(SCRIPT_PATH + "refs/hsv_resist_mut.xlsx", "insertions")
@@ -82,6 +88,7 @@ class hsv(general_pipe):
         ####polymorphism nucleotide
         poly = pd.read_csv(SCRIPT_PATH + "refs/hsv_polymorphism_nucleotides.csv")
         merged = mut_tbl.merge(poly, how='left', on=["gene_name","nt_position_on_gene" ,"X14112.1_NT"]).dropna()
+        merged = merged[merged.filter(regex='_NT$').eq(merged['alt'], axis=0).any(axis=1)]
         save_format_xl(merged, seq_num, "reports/polymorphism.xlsx")
 
         #remove script temp files:
@@ -105,12 +112,13 @@ class hsv(general_pipe):
                 if "sorted" in bam_file and "bai" not in bam_file:
                     #general qc
                     sample = bam_file.split(".mapped")[0] + bam_file.split(".sorted")[1].split(".bam")[0]
-                    total_reads, mapped_reads, mapped_percentage, cov_bases, chimer_count = super().general_qc(bam_path+bam_file)
+                    total_reads = pysam.AlignmentFile(bam_path + bam_file.split(".mapped")[0]+".bam").count(until_eof=True)
+                    mapped_reads, mapped_percentage, cov_bases, chimer_count = super().general_qc(bam_path+bam_file, total_reads)
             
                     #depth 
-                    max_depth23, min_depth23,mean_depth23, cover23, cns5_cover23 = super().depth(depth_path+sample+".txt", start = ul23_reg[0], end= ul23_reg[1])
-                    max_depth30, min_depth30, mean_depth30, cover30, cns5_cover30 = super().depth(depth_path+sample+".txt", start = ul30_reg[0], end= ul30_reg[1])
-                    max_depth42, min_depth42,mean_depth42, cover42, cns5_cover42 = super().depth(depth_path+sample+".txt", start = ul42_reg[0], end= ul42_reg[1])
+                    max_depth23, min_depth23,mean_depth23, cover23, cns5_cover23 = super().depth_qc(depth_path+sample+".txt", start = ul23_reg[0], end= ul23_reg[1])
+                    max_depth30, min_depth30, mean_depth30, cover30, cns5_cover30 = super().depth_qc(depth_path+sample+".txt", start = ul30_reg[0], end= ul30_reg[1])
+                    max_depth42, min_depth42,mean_depth42, cover42, cns5_cover42 = super().depth_qc(depth_path+sample+".txt", start = ul42_reg[0], end= ul42_reg[1])
                     
                     #add rows
                     general_qc.loc[len(general_qc.index)] = [sample, mapped_percentage, mapped_reads, total_reads, cov_bases, chimer_count]

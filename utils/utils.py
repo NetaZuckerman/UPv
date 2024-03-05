@@ -14,6 +14,7 @@ from Bio import SeqIO
 from Bio.Seq import Seq
 import pandas as pd
 import numpy as np
+import csv 
 
 #mafft commands
 MAFFT = os.path.dirname(__file__)+"/MAFFT.sh %(not_aligned)s %(reference)s %(aligned)s"
@@ -25,16 +26,15 @@ SPLIT = "bamtools split -in %(bam)s -reference"
 ambiguous_nucleotides = ["W", "Y", "R", "S", "D","K","M","V","H","B","X"]
 
 #return list of touple (R1,R2) file names
-def get_r1r2_list(fastq_path):
-    r1r2_list = []
+def get_sample_fq_dict(fastq_path):
+    sample_fq = {}
     skip_files=["R2", "Undetermined", "unpaired", "singletons"]
     for r1 in os.listdir(fastq_path):
         if any(skip_file in r1 for skip_file in skip_files) or "fast" not in r1:
             continue
-        r2 = r1.replace("R1","R2")
         sample = r1.split("_")[0].split(".fastq")[0] #sample short name
-        r1r2_list.append([sample,r1,r2])
-    return r1r2_list
+        sample_fq[sample] = r1
+    return sample_fq 
 
  
 #split all bam files by segments
@@ -125,7 +125,7 @@ def write_sub_fasta(fasta, path, regions, gene, strand='+'):
             if strand=='+':
                 sub_seq = seq[start-1:end-1]
             elif strand=='-':
-                sub_seq = str(Seq(seq[start-1:end-1]).reverse_complement())
+                sub_seq = str(Seq(seq[start:end]).reverse_complement())
             else:
                 raise ValueError("strand must be + or -.")
             f.write(">" + header + '\n')
@@ -143,8 +143,15 @@ def fix_cns_header(path):
                 ofile.write(">" + header + "\n" + seq + "\n")
     
             ofile.close()
-        
-        
+            
+def get_barcodes(barcode_csv):
+    
+    with open(barcode_csv, mode='r') as infile:
+        reader = csv.reader(infile)
+        barcodes = dict((rows[1],rows[0]) for rows in reader)
+    barcodes.pop('sample')
+    return barcodes
+
 translate_table = {
     'ATA': 'I', 'ATC': 'I', 'ATT': 'I', 'ATG': 'M',
     'ACA': 'T', 'ACC': 'T', 'ACG': 'T', 'ACT': 'T',

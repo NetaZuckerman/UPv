@@ -24,10 +24,10 @@ from sys import argv
 from math import floor
 import pandas as pd
 from Bio.Seq import Seq
-from utils.utils import translate_table, get_sequences, mutations_positions
+from utils.utils import translate_table, get_sequences
 from utils.format_xl import save_format_xl
 ambiguous_nucleotides = ["W", "Y", "R", "S", "D","K","M","V","H","B","X"]
-
+import numpy as np
 
 def mutations_by_sample(mutations_position,sequences):
     '''
@@ -254,6 +254,16 @@ def drop_low_qc(seqs, thresh=70):
             
     return new_seqs
 
+
+def only_show_snp(df):
+    col_list = [col for col in df.columns if col.endswith('_NT')]
+    col_0_array = df[col_list[0]].values  # Convert to numpy array
+    df['SNPs_count'] = ((df[col_list[1:]].values != col_0_array[:, None]) & (df[col_list[1:]] != 'N') & (df[col_list[1:]] != '-')).sum(axis=1)
+    df = df[df['SNPs_count'] > 0]
+
+    return df
+
+
 def run(alignment_file,regions_csv,output, show_all =  False):
     
     
@@ -265,31 +275,40 @@ def run(alignment_file,regions_csv,output, show_all =  False):
     sequences = get_sequences(alignment_file)
     # sequences = drop_low_qc(sequences)
     
-    if show_all:
-        seq_len= len(list(sequences.values())[0])
-        mutations_positions_nt = range(1, seq_len+1, 1)
-    else:
-        mutations_positions_nt = mutations_positions(sequences)
-    mutations_by_sample_nt = mutations_by_sample(mutations_positions_nt,sequences)
-    regions = get_regions(regions_csv)
-    gene_names, position_on_gene_nt, position_on_gene_aa = get_gene(mutations_positions_nt, regions)
-    get_all_aa(mutations_positions_nt, sequences, gene_names, regions)
-    
-    mutations_by_sample_aa = get_all_aa(mutations_positions_nt, sequences, gene_names, regions)
-    
-    
     df = pd.DataFrame()
+    seq_len= len(list(sequences.values())[0])
+    mutations_positions_nt = range(1, seq_len+1, 1)
+    mutations_by_sample_nt = mutations_by_sample(mutations_positions_nt,sequences)
+    
+    if type(regions_csv)==type(None) or regions_csv == "": 
+        if not seq_len%3 == 0:
+            raise ValueError("Error: Invalid Reference Sequence Length. \n reference sequence must be divisible by 3 for mutation table calculation.")
+        regions = {"unknown": (1,seq_len,'+')}
+    else:    
+        regions = get_regions(regions_csv)
+        
+    gene_names, position_on_gene_nt, position_on_gene_aa = get_gene(mutations_positions_nt, regions)
     df["gene_name"] = gene_names
     df["nt_position_on_gene"] = position_on_gene_nt 
     df["nt_position_on_genome"] = mutations_positions_nt
-   
+    
+    mutations_by_sample_aa = get_all_aa(mutations_positions_nt, sequences, gene_names, regions)
+
     for sample, mut in mutations_by_sample_nt.items():
         df[sample+"_NT"] = mut
+    
     df["aa_position_on_gene"] = position_on_gene_aa
     for sample, mut in mutations_by_sample_aa.items():
         df[sample+"_AA"] = mut    
+   
+
+
     
     aa_sum(df, sequences)
+    
+    if not show_all:
+        df = only_show_snp(df)
+        
     save_format_xl(df, len(sequences)-1, output)
 
     

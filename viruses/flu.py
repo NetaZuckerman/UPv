@@ -12,13 +12,13 @@ from utils import utils
 
 #bash commands
 SPLIT = "bamtools split -in %(bam)s -reference"
-CAT_SAMPLE = "cat CNS_5/%(sample)s* > CNS_5/per_sample/%(sample)s.fasta"
+CAT_SAMPLE = "cat CNS_5/%(sample)s.REF* > CNS_5/per_sample/%(sample)s.fasta"
 CAT_NO_HEADER = "awk 'FNR>1' %(files)s* >> %(bigfile)s"
 
 class flu (general_pipe):
 
-    def __init__(self, reference, fastq, threads):
-        super().__init__(reference, fastq, threads)    
+    def __init__(self, reference, fastq, minion, threads):
+        super().__init__(reference, fastq, minion, threads)    
    
     def mapping(self):
         super().mapping()
