@@ -27,7 +27,7 @@ from Bio.Seq import Seq
 from utils.utils import translate_table, get_sequences
 from utils.format_xl import save_format_xl
 ambiguous_nucleotides = ["W", "Y", "R", "S", "D","K","M","V","H","B","X"]
-import numpy as np
+
 
 def mutations_by_sample(mutations_position,sequences):
     '''
@@ -301,9 +301,6 @@ def run(alignment_file,regions_csv,output, show_all =  False):
     for sample, mut in mutations_by_sample_aa.items():
         df[sample+"_AA"] = mut    
    
-
-
-    
     aa_sum(df, sequences)
     
     if not show_all:

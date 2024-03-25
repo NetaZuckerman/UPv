@@ -47,7 +47,8 @@ class multi_ref (general_pipe):
     def qc_report(self, bam_path, depth_path, output_report):
         super().qc_report("BAM/", "QC/depth/", 'QC/QC_report')
         qc = pd.read_csv("QC/QC_report.csv")
-        qc[['sample', 'reference']] = qc['sample'].str.split('.REF_', expand=True)
-        #reorder columns
-        qc = qc[['sample', 'reference','mapped%','mapped_reads','total_reads','cov_bases','coverage%','coverage_CNS_5%', 'mean_depth','max_depth','min_depth', 'chimeric_read_count']]
-        qc.to_csv("QC/QC_report.csv", index=False)
+        if len(qc) > 0:
+            qc[['sample', 'reference']] = qc['sample'].str.split('.REF_', expand=True)
+            #reorder columns
+            qc = qc[['sample', 'reference','mapped%','mapped_reads','total_reads','cov_bases','coverage%','coverage_CNS_5%', 'mean_depth','max_depth','min_depth', 'chimeric_read_count']]
+            qc.to_csv("QC/QC_report.csv", index=False)

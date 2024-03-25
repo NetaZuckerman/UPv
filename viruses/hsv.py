@@ -18,7 +18,6 @@ import os
 from utils.utils import get_sequences, write_sub_fasta, create_dirs
 from mutations import signatures
 from utils.format_xl import save_format_xl
-import numpy as np
 import pysam
 
 SCRIPT_PATH = os.path.dirname(__file__) +'/'

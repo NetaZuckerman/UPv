@@ -14,7 +14,10 @@ from pipelines.multiRef import multi_ref
 from viruses.polio import polio
 from viruses.hiv import hiv
 from viruses.hsv import hsv
+from viruses.cmv import cmv
+
 from utils import utils, parse_gb_file, parse_input
+
 from mutations import signatures
 import os
 import sys
@@ -39,7 +42,7 @@ if __name__ == "__main__":
     if hiv_flag:
         reference = SCRIPT_PATH + "viruses/refs/K03455.1_HIV.fasta"
         vcf = True
-    elif not reference and not hsv_flag:
+    elif not reference and not (hsv_flag or cmv_flag):
         raise ValueError("reference sequence is required.")
         
     if not mini:      
@@ -67,6 +70,9 @@ if __name__ == "__main__":
                 
             elif hsv_flag:
                 pipe = hsv(reference,fastq, minion_flag, threads)
+            
+            elif cmv_flag:
+                pipe = cmv(reference,fastq, minion_flag, threads)
 
             elif multi_ref_flag:
                 pipe = multi_ref(reference,fastq, minion_flag, threads, drop_joint_reads)
@@ -81,7 +87,7 @@ if __name__ == "__main__":
         
             if vcf:
                 utils.create_dirs(["VCF"])
-                pipe.variant_calling()
+                pipe.variant_calling('BAM/', 'VCF/')
                 
             pipe.cns("BAM/","CNS/","CNS_" + cns_min_depth_call + '/', cns_min_depth_call, cns_min_freq_thresh) #temp comment
             
@@ -100,7 +106,7 @@ if __name__ == "__main__":
         parse_gb_file.parse(gb_file)
         regions_file = gb_file.replace(".gb", "_regions.csv")
 
-    if mutations_flag or mini:
+    if mutations_flag or mini and not cmv_flag:
         utils.create_dirs(["reports"])
         signatures.run("alignment/all_aligned.fasta", regions_file, "reports/mutations.xlsx")
     

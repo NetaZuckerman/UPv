@@ -15,7 +15,6 @@ from statistics import mean
 import csv
 from utils import utils
 import shutil
-import pandas as pd
 
 MAIN_SCRIPT_DIR = os.path.dirname(__file__)+'/../'
 
@@ -29,8 +28,6 @@ SORT = "samtools sort -@ %(threads)s %(output_path)s%(sample)s.mapped.bam -o %(o
 CHIMER = "samtools view %(output_path)s%(sample)s.bam |  grep 'SA:' > %(output_path)s%(sample)s.chimeric_reads.txt"
 DEPTH = "samtools depth -a %(bam_path)s%(bam_file)s > %(depth_path)s%(sample)s.txt"
 CNS = "samtools mpileup -A %(bam_path)s%(bam_file)s | ivar consensus -t %(min_freq_thresh)s -m %(min_depth_call)s -p %(cns_path)s%(sample)s.fa"
-#variants
-VCF = "bcftools mpileup -d 8000 --skip-indels -f %(ref)s %(bam)s -a AD,DP | sed '/^#/d' > %(vcf)s"
 
 #MAFFT commands
 ALL_NOT_ALIGNED =   "cat %(dir)s > alignment/all_not_aligned.fasta"
@@ -85,7 +82,7 @@ class general_pipe():
             #chimeric reads: find reads that where mapped to more then one region in the genome
             subprocess.call(CHIMER % dict(sample=sample, output_path="BAM/"), shell=True)
         
-    def variant_calling(self, bam_path = "BAM/", vcf_path= "VCF/"):
+    def variant_calling(self, bam_path, vcf_path):
         '''
 
         Parameters
@@ -97,63 +94,62 @@ class general_pipe():
 
         '''
         
-        
         for bam in os.listdir(bam_path):
             if "sorted" in bam:
                 sample = bam.split(".bam")[0].replace(".mapped.sorted", "")
-                vcf_file = vcf_path + sample + ".vcf"
-                subprocess.call(VCF % dict(bam=bam_path + bam, ref=self.reference, vcf= vcf_file ), shell=True) 
-                vcf = pd.read_csv(vcf_file, sep='\t', names=["ref_id",	"pos",	"id",	"ref",	"alt",	"qual"	,"filter",	"info"	,"format", "details"])
-                if len(vcf) == 0:
-                    continue
-                #process alt nucleotides accurance
-                alts = vcf["alt"].str.split(",",expand=True)
-                # add column if not exist
-                if 2 not in alts.columns:
-                    alts[2] = None
-                cols = ["alt" + str(x) for x in alts.columns]
-                alts = alts.set_axis(cols, axis=1)
-                vcf = pd.concat([vcf, alts], axis=1)
-                
-                #process each nucleotide depth
-                depths = vcf["details"].str.split(":",expand=True)[2].str.split(",",expand=True)
-                # add column if not exist
-                if 3 not in depths.columns:
-                    depths[3] = None
-                
-                
-                cols = ["depth" + str(x) for x in depths.columns]
-                depths = depths.set_axis(cols, axis=1)
-                
-                vcf = pd.concat([vcf, depths], axis=1)
+                vcf_file = vcf_path + sample + ".csv"
 
-                #get A G C T counts
-                final_df = pd.DataFrame(columns=["position", "ref", "A",  "G", "C", "T"])
-                for i, row in vcf.iterrows(): 
-                    counts = {"position":row["pos"],
-                     "ref": row["ref"],
-                        row["ref"]:row["depth0"],
-                     row["alt0"]: row["depth1"],
-                     row["alt1"]: row["depth2"],
-                     row["alt2"]: row["depth3"]}
-                    if "<*>" in counts.keys():
-                        counts.pop("<*>")
-                    if None in counts.keys():
-                        counts.pop(None)
-                    
-                    counts = pd.DataFrame(data = counts, index=[0])
-                    final_df = pd.concat([final_df,counts], axis = 0)
-                    final_df = final_df.fillna(0)
-                    
-                #calc the frequencies
-                final_df[["A","G","C","T"]] = final_df[["A","G","C","T"]].astype(int)
-                final_df["depth"] = final_df["A"] + final_df["G"] +  final_df["C"] + final_df["T"]
-                final_df["%A"] = round(final_df["A"]/final_df["depth"]*100)
-                final_df["%G"] = round(final_df["G"]/final_df["depth"]*100)
-                final_df["%C"] = round(final_df["C"]/final_df["depth"]*100)
-                final_df["%T"] = round(final_df["T"]/final_df["depth"]*100)
+                bamfile = pysam.AlignmentFile(bam_path + bam, "rb")
+                reference = pysam.FastaFile(self.reference)
+                with open(vcf_file, "w", newline='') as output_file:
+                    fieldnames = ['position', 'ref', 'A', 'G', 'C', 'T', 'N', 'D', 'I', 'depth', '%A', '%G', '%C', '%T', '%N', '%D', '%I']
+                    writer = csv.DictWriter(output_file, fieldnames=fieldnames)
+                    writer.writeheader()
+
+                    for pileupcolumn in bamfile.pileup(min_base_quality =0):
+                        position = pileupcolumn.reference_pos
+                        reference_base = reference.fetch(region=bamfile.get_reference_name(0), start=position, end=position+1)
+                        nucleotide_counts = {'A': 0, 'C': 0, 'G': 0, 'T': 0, 'N': 0, 'D': 0, 'I': 0}  # Initialize counts
+                        depth = pileupcolumn.n
+                        deletions = 0
+                        insertions = 0 
+
+                        for pileupread in pileupcolumn.pileups:
+                            if pileupread.is_del:
+                                deletions += 1
+                            elif pileupread.indel > 0:
+                                insertions += 1
+                            elif not pileupread.is_refskip:
+                                base = pileupread.alignment.query_sequence[pileupread.query_position]
+                                if base in nucleotide_counts:
+                                    nucleotide_counts[base] += 1
+                                else:
+                                    nucleotide_counts['N'] += 1  # Count ambiguous bases as 'N'
+
+                        row = {
+                            'position': position+1,
+                            'ref': reference_base,
+                            'A': nucleotide_counts['A'],
+                            'G': nucleotide_counts['G'],
+                            'C': nucleotide_counts['C'],
+                            'T': nucleotide_counts['T'],
+                            'N': nucleotide_counts['N'],
+                            'D': deletions,
+                            'I': insertions,
+                            'depth': depth,
+                            '%A': round((nucleotide_counts['A'] / depth) * 100, 2) if depth > 0 else 0,
+                            '%G': round((nucleotide_counts['G'] / depth) * 100, 2) if depth > 0 else 0,
+                            '%C': round((nucleotide_counts['C'] / depth) * 100, 2) if depth > 0 else 0,
+                            '%T': round((nucleotide_counts['T'] / depth) * 100, 2) if depth > 0 else 0,
+                            '%N': round((nucleotide_counts['N'] / depth) * 100, 2) if depth > 0 else 0,
+                            '%D': round((deletions / depth) * 100, 2) if depth > 0 else 0,
+                            '%I': round((insertions / depth) * 100, 2) if depth > 0 else 0,
+                        }
+                        writer.writerow(row)
+
+                bamfile.close()
+                reference.close()
                 
-                final_df.to_csv(vcf_path + sample + ".csv", index = False)
                 
     #find mapping depth and consensus sequence 
     def cns(self, bam_path, cns_path, cns_x_path, min_depth_call, min_freq_thresh):

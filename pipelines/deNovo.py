@@ -24,7 +24,7 @@ BWM_MEM_CONTIGS = "bwa mem -v1 -t  %(threads)s  %(reference)s %(sample_fasta)s |
 BWM_MEM_FASTQ = "bwa mem -v1 -t  %(threads)s  %(reference)s %(r1)s %(r2)s | samtools view -@ 32 -b - > %(output_path)s%(out_file)s.bam"
 
 RUN_SPADES = "spades -1 %(r1)s -2 %(r2)s -o %(output_path)s --rna"
-#RUN_SPADES = "spades --12 %(r1)s -o %(output_path)s --rna"
+# RUN_SPADES = "spades --12 %(r1)s -o %(output_path)s --rna"
 
 RUN_BLAST = "blastn -db %(db)s -query %(query)s -out %(output_file)s -outfmt \"6  qseqid sseqid stitle qcovs qlen slen pident length mismatch gapopen qstart qend sstart send evalue bitscore \""
 
@@ -106,7 +106,7 @@ class de_novo(general_pipe):
            ident = longest_contig['identity']
            coverage = longest_contig['query_coverage']
            sample_ref.loc[len(sample_ref)] = [str(sample),reference_id, reference_name, coverage, ident, blast_score]
-        sample_ref.to_csv("/home/hagar/sample_ref.csv", index = False)
+        #sample_ref.to_csv("/home/hagar/sample_ref.csv", index = False)
         return sample_ref
     
     #export reference sequence fasta 

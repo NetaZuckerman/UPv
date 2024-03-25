@@ -25,7 +25,7 @@ rt_reg = (2661,3294)
 int_reg = (4230, 5094)
 
 class hiv(general_pipe):
-    def __init__(self, reference, fastq, threads, minion, metadata):
+    def __init__(self, reference, fastq,minion, threads, metadata):
         super().__init__(reference, fastq, minion, threads)    
         self.metadata = metadata
  
@@ -77,7 +77,7 @@ class hiv(general_pipe):
             if file.endswith("csv"):
                 vcf = pd.read_csv(vcf_path + file)
                 sample = file.split(".csv")[0]
-                vcf["base"] = vcf[["%A","%T","%C","%G"]].apply(lambda row: row[row > 20].nlargest(2).index.values, axis=1)
+                vcf["base"] = vcf[["%A","%T","%C","%G"]].apply(lambda row: row[row > 5].nlargest(2).index.values, axis=1)
                 #clean
                 vcf["base"] = vcf["base"].astype(str).apply(lambda row: row.replace("%", "").replace("'","").replace("[","").replace("]",""))
                 vcf.loc[vcf["base"] == "", "base"] = 'A C T G'
