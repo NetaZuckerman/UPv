@@ -83,17 +83,16 @@ if __name__ == "__main__":
            
             # mapping 
             pipe.mapping()
-            
-        
-            if vcf:
-                utils.create_dirs(["VCF"])
-                pipe.variant_calling('BAM/', 'VCF/')
                 
             pipe.cns("BAM/","CNS/","CNS_" + cns_min_depth_call + '/', cns_min_depth_call, cns_min_freq_thresh) #temp comment
             
             pipe.depth("BAM/","QC/depth/")
             
             pipe.mafft("alignment/all_not_aligned.fasta", "alignment/all_aligned.fasta")
+            
+            if vcf:
+                utils.create_dirs(["VCF"])
+                pipe.variant_calling('BAM/', 'VCF/')
             
             pipe.qc_report("BAM/", "QC/depth/", 'QC/QC_report') #temp comment
             

@@ -15,6 +15,7 @@ from statistics import mean
 import csv
 from utils import utils
 import shutil
+import pandas as pd
 
 MAIN_SCRIPT_DIR = os.path.dirname(__file__)+'/../'
 
@@ -65,7 +66,7 @@ class general_pipe():
         '''
         subprocess.call(INDEX % dict(reference=self.reference), shell=True)
 
-        filter_out_code = 2052
+        filter_out_code = 2052 #read unmapped + supplementary alignment
         
         for sample, fq in self.sample_fq_dict.items():
             if self.minion:
@@ -149,7 +150,25 @@ class general_pipe():
 
                 bamfile.close()
                 reference.close()
-                
+        self.add_cns_to_vcf(vcf_path)
+     
+    def add_cns_to_vcf(self, vcf_path):
+        alns = utils.get_sequences('alignment/all_aligned.fasta')
+        ref = utils.get_sequences(self.reference).popitem()
+        #remove ref from alns
+        alns.pop(ref[0])
+        ref_length = len(ref[1])
+        ref_seq = ref[1]
+
+
+        for vcf_file in os.listdir(vcf_path):
+            sample = vcf_file.split('.csv')[0]
+            cns = alns.pop(sample)
+            ref_df = pd.DataFrame({'position': range(1, ref_length + 1), 'ref': list(ref_seq) , 'CNS': list(cns)})
+            vcf = pd.read_csv(vcf_path + vcf_file)
+            vcf = pd.merge(ref_df, vcf, on=['position', 'ref'], how='left')
+            vcf.to_excel(vcf_path + sample + '.xlsx', index=False)
+            os.remove(vcf_path + vcf_file)
                 
     #find mapping depth and consensus sequence 
     def cns(self, bam_path, cns_path, cns_x_path, min_depth_call, min_freq_thresh):
