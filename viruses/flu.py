@@ -4,6 +4,11 @@
 Created on Mon Jan 10 10:15:00 2022
 
 @author: hagar
+
+analyse known subtype of influenza. 
+the provided reference should be a multi-fasta of the 8 segments of flu.
+
+
 """
 from pipelines.generalPipeline import general_pipe, ALL_NOT_ALIGNED
 import os
@@ -21,10 +26,30 @@ class flu (general_pipe):
         super().__init__(reference, fastq, minion, threads)    
    
     def mapping(self):
+        '''
+        use general pipeline's mapping and split the result 
+        so each sample will have a bam for each segment.
+
+        Returns
+        -------
+        None.
+
+        '''
         super().mapping()
         utils.split_bam("BAM/")
         
     def concat_samples(self):
+        '''
+        cns() generated one seperated fasta files for each sample segment
+        generate a multi-fasta file for each sample with all segments.
+        save in cns_path/per_sample/ folder.
+        save cns_path/per_sample/cat/ concatenated version (one header) for later mafft.
+
+        Returns
+        -------
+        None.
+
+        '''
         os.makedirs("CNS_5/per_sample")
         os.makedirs("CNS_5/per_sample/cat/")
         skip_files=["R2", "Undetermined", "unpaired", "singletons"]
@@ -41,6 +66,14 @@ class flu (general_pipe):
             subprocess.call(CAT_NO_HEADER % dict(files="CNS_5/"+sample,bigfile=cat_file_name), shell=True)
         
     def concat_segments(self):
+        '''
+        generate a multi-fasta file for each segment with all samples.
+
+        Returns
+        -------
+        None.
+
+        '''
         os.makedirs("CNS_5/per_gene") 
         #get segments list 
         ref= open(self.reference,"r")
@@ -60,7 +93,21 @@ class flu (general_pipe):
         
             
     def mafft(self, not_aligned, aligned):
+        '''
+        align all concatnated samples to concatenated reference.
         
+        Parameters
+        ----------
+        not_aligned : str
+            path to not aligned fasta file.
+        aligned : str
+            path to aligned fasta file.
+            
+        Returns
+        -------
+        None.
+
+        '''
         self.concat_samples()
         self.concat_segments()
         
@@ -80,4 +127,4 @@ class flu (general_pipe):
 
         #run mafft
         utils.mafft("reference_for_mafft.fa", "alignment/all_not_aligned.fasta", "alignment/all_aligned.fasta")
-                    
+        os.remove("reference_for_mafft.fa")

@@ -5,30 +5,50 @@ Created on Wed Jan 26 11:16:08 2022
 
 @author: hagar
 
-Additional analysis for polio data.
-
+polio pipeline considering all 3 lineages of polio, aiming to recognize the lineages exist in each sample. 
+the assumtion here is that we get a mixture of polio viruses from several lineage in each sample. 
+if you know the specific lineage in your sample, use the general pipeline.
 """
 
 
 FILTER = "bwa mem -v1 -t %(threads)s %(reference)s %(r1)s %(r2)s | samtools view -@ 16 -b -f 2 > %(output_path)s%(sample)s.bam"
 BAM2FQ = "samtools bam2fq -0n %(file)s.bam > %(file)s.fastq"
-BWM_MEM_FASTQ = "bwa mem -v1 -t %(threads)s %(reference)s %(fastq)s | samtools view -bq 1 | samtools view -@ 16 -b > %(output_path)s%(out_file)s.bam" #filter out common reads
 
 from utils import utils
-from pipelines.generalPipeline import  FILTER_BAM, SORT, general_pipe
+from pipelines.generalPipeline import  general_pipe
 import subprocess
 import os
-from utils.utils import SPLIT
-from utils.summerize_coverage import summerize_coverage
 
 class polio(general_pipe):
     def __init__(self, reference, fastq, minion, threads):
+        '''
+
+        Parameters
+        ----------
+        reference : str
+            path to the reference fasta file.
+        fastq : str
+            path to fastq folder
+        minion : BOOL
+            boolean to indicate if the the reads are minion based. defualt is illumina
+        threads : int
+            max number of threads for parts threads are available in this pipeline.
+
+        Raises
+        ------
+        ValueError
+            polio pipeline only works with illumina reads. for minion use PoP.
+
+        Returns
+        -------
+        None.
+
+        '''
         super().__init__(reference, fastq, minion, threads) 
         if self.minion:
-            raise ValueError("polio pipeline only works with illumina reads. for minion use PoP.")
-        utils.create_dirs([self.fastq+"polio_reads","BAM/fastq_based", "BAM/contig_based"]) #temp comment
+            raise ValueError("polio pipeline only works with illumina reads. for minion use PoP.\nhttps://github.com/NetaZuckerman/PoP")
+        utils.create_dirs([self.fastq+"polio_reads"])
 
-    #filter the fastq files to contain only mapped reads 
 
     def filter_non_polio(self):
         '''
@@ -48,65 +68,23 @@ class polio(general_pipe):
             subprocess.call(BAM2FQ % dict(file=self.fastq+"polio_reads/" + sample), shell=True)
             os.remove(self.fastq+"polio_reads/" + sample + ".bam")
     
-
-    #override
-    #map each sample to its reference
     def mapping(self):
-        
+        '''
+        use general pipeline's mapping and split the result 
+        so each sample will have a bam for each segment.
+    
+        Returns
+        -------
+        None.
+    
+        '''
         self.filter_non_polio()
-        self.fastq = self.fastq + "polio_reads/"
-
-        for sample, r1 in self.sample_fq_dict.items():
-            
-            subprocess.call(BWM_MEM_FASTQ % dict(threads = self.threads, reference=self.reference ,fastq=self.fastq+sample+".fastq", out_file=sample, output_path="BAM/fastq_based/"), shell=True) #map to reference
-            subprocess.call(SPLIT % dict(bam="BAM/fastq_based/"+sample+".bam"), shell=True)
-            os.remove("BAM/fastq_based/"+sample+".bam")
-            
-            self.map_bam()
-
-    def map_bam(self):
-        filter_out_code = 4
-        for bam in os.listdir("BAM/fastq_based/"):
-            sample_ref = bam.split(".bam")[0]
-            subprocess.call(FILTER_BAM % dict(sample=sample_ref, filter_out_code = filter_out_code, output_path="BAM/fastq_based/"), shell=True) #keep mapped reads
-            subprocess.call(SORT % dict(sample=sample_ref, output_path="BAM/fastq_based/"), shell=True)         
-        
-        
-    #override
-    #run general pipeline function twice (contigs based and fastq based)
-    def cns(self, bam_path, cns_path, cns_x_path, min_depth_call, min_freq_thresh):
-        contig_dir = "contig_based/"
-        fastq_dir = "fastq_based/"
-        utils.create_dirs([cns_path+contig_dir, cns_path+fastq_dir, cns_x_path+contig_dir,cns_x_path+fastq_dir])
-        super().cns(bam_path+fastq_dir, cns_path+fastq_dir, cns_x_path+fastq_dir, min_depth_call, min_freq_thresh)
-   
-    def depth(self, bam_path, depth_path):
-        contig_dir = "contig_based/"
-        fastq_dir = "fastq_based/"
-        utils.create_dirs([depth_path+contig_dir, depth_path+fastq_dir])
-        super().depth(bam_path+fastq_dir, depth_path+fastq_dir)
-    #override TODO - tests
-    def variant_calling(self, bam_path, vcf_path):
-        utils.create_dirs(["VCF/fastq_based", "VCF/contig_based"])
-        super().variant_calling(bam_path = "BAM/fastq_based/", vcf_path= "VCF/fastq_based/")
-        
-    #override
-    #write report twice (contigs based and fastq based)
-    def qc_report(self, bam_path, depth_path, output_report, vcf=0):
-        fastq_dir = "fastq_based/"        
-        super().results_report(bam_path+fastq_dir, depth_path+fastq_dir, output_report+"_fastq_based")
-        
-        summerize_coverage(output_report+"_fastq_based.csv")
+        super().mapping()
+        utils.split_bam("BAM/")
 
         
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
+    
+    def qc_report(self, bam_path, depth_path, output_report):
+
+        super().results_report(bam_path, depth_path, output_report)
     

@@ -37,7 +37,7 @@ if __name__ == "__main__":
         log.write("Working Directory: \n" + os.getcwd() + '\n\n')
         log.write("Command: \n" + ' '.join(sys.argv))
     
-    dirs=['BAM','QC','CNS','CNS_' + cns_min_depth_call ,'QC/depth', 'alignment'] if not hiv_flag else ['BAM','QC','CNS','QC/depth', 'alignment']
+    dirs=['BAM','QC','CNS','CNS_' + cns_min_depth_call ,'QC/depth', 'alignment'] #if not hiv_flag else ['BAM','QC','CNS','QC/depth', 'alignment']
     
     if hiv_flag:
         reference = SCRIPT_PATH + "viruses/refs/K03455.1_HIV.fasta"
@@ -83,6 +83,8 @@ if __name__ == "__main__":
            
             # mapping 
             pipe.mapping()
+            
+            
                 
             pipe.cns("BAM/","CNS/","CNS_" + cns_min_depth_call + '/', cns_min_depth_call, cns_min_freq_thresh) #temp comment
             
@@ -96,7 +98,7 @@ if __name__ == "__main__":
             
             pipe.qc_report("BAM/", "QC/depth/", 'QC/QC_report') #temp comment
             
-    else: #yes mini
+    else: #yes mini - input is fasta, no need to analyse fastq
         if not os.path.exists("alignment"):    
             utils.create_dirs(["alignment"])
         utils.mafft(reference, fastq, "alignment/all_aligned.fasta")

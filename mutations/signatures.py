@@ -204,7 +204,7 @@ def get_single_aa(seq, position, region):
             codon_pos = (position -1 , position, position + 1)
         if mod == 2:  # second nuc on the codon
             codon_pos = (position - 2, position -1, position)
-            
+        
         codon = seq[codon_pos[0]-1] + seq[codon_pos[1]-1] + seq[codon_pos[2]-1]
     
     if codon in translate_table:
@@ -234,7 +234,7 @@ def get_all_aa(mutations_positions_nt, sequences, gene_names, regions):
     for sample, seq in sequences.items():
         sample_aa = []
         for i in range(len(mutations_positions_nt)):
-            if gene_names[i] == 'UTR':
+            if 'UTR' in gene_names[i] :
                 sample_aa.append('X')
             else:
                 pos = mutations_positions_nt[i]
@@ -256,6 +256,20 @@ def drop_low_qc(seqs, thresh=70):
 
 
 def only_show_snp(df):
+    '''
+    count samples with snp's in each position, and drop positions with 0 snp's.
+
+    Parameters
+    ----------
+    df : pandas.Dataframe
+        the mutation table.
+
+    Returns
+    -------
+    df : pandas.Dataframe
+        the filtered mutation table
+
+    '''
     col_list = [col for col in df.columns if col.endswith('_NT')]
     col_0_array = df[col_list[0]].values  # Convert to numpy array
     df['SNPs_count'] = ((df[col_list[1:]].values != col_0_array[:, None]) & (df[col_list[1:]] != 'N') & (df[col_list[1:]] != '-')).sum(axis=1)

@@ -47,10 +47,6 @@ def parse(file, ds=True):
             gene = lines[i+1].strip().split('"')[1].split('"')[0]
             for position in pos_list:
                 position = position.split("..")
-                # df = df.append({"GENE": gene,
-                #             "START": position[0],
-                #             "END": position[1].split(")")[0],
-                #             "STRAND": strand}, ignore_index=True)
                 df.loc[len(df)] = [gene,position[0],position[1].split(")")[0], strand]
 
         

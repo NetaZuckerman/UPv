@@ -4,10 +4,16 @@
 Created on Mon Jun 12 06:40:21 2023
 
 @author: hagar
+
+This script is designed specifically for our HIV department (Orna).
+The illumina reads are mapped to the whole genome reference.
+The genes: RT(reverese transcriptasem), PR(protease), int(integrase) are cut.
+consensus sequence of each sample is determined by Orna's requermients and explained in cns().
+The final report is a metadata file that HIV department suppose to provide us, merged with the consensus sequences. 
 """
 
 import pandas as pd
-from pipelines.generalPipeline import general_pipe, DEPTH, ALL_NOT_ALIGNED
+from pipelines.generalPipeline import general_pipe, ALL_NOT_ALIGNED
 import subprocess
 from os import listdir
 from utils.utils import get_sequences, write_sub_fasta, mafft
@@ -26,11 +32,47 @@ int_reg = (4230, 5094)
 
 class hiv(general_pipe):
     def __init__(self, reference, fastq,minion, threads, metadata):
+        '''
+        
+
+        Parameters
+        ----------
+        reference : str
+            path to the reference fasta file.
+            no need to provide in HIV runs.
+            using K03455.1 as reference. it is defined in the main script.
+        fastq : str
+            path to fastq folder
+        minion : BOOL
+            boolean to indicate if the the reads are minion based. defualt is illumina
+        threads : int
+            max number of threads for parts threads are available in this pipeline.
+        metadata : str
+            path to xlsx file HIV department should send as.
+
+        Returns
+        -------
+        None.
+
+        '''
         super().__init__(reference, fastq, minion, threads)    
         self.metadata = metadata
  
     
     def cut_genes(self, aln_path):
+        '''
+        cut the genes from the all_aligned file.
+
+        Parameters
+        ----------
+        aln_path : str
+            path to alignment fasta file.
+
+        Returns
+        -------
+        None.
+
+        '''
         fasta = get_sequences(aln_path + "all_aligned.fasta")
         write_sub_fasta(fasta, aln_path, pr_reg, "reg_PR")
         write_sub_fasta(fasta, aln_path, int_reg, "reg_Int")
@@ -68,28 +110,60 @@ class hiv(general_pipe):
         mergi = pd.merge(format_df, df, on=["SAMPLE_No_NGS","Region_Protein"], how = "left")
         mergi.to_excel("QC/final_report.xlsx", index=False)
         
-
-    #@override
-    def cns(self, bam_path, cns_path, cns_x_path, min_depth_call, min_freq_thresh):
         
-        vcf_path = bam_path.replace("BAM","VCF")
-        for file in os.listdir(vcf_path):
-            if file.endswith("csv"):
-                vcf = pd.read_csv(vcf_path + file)
-                sample = file.split(".csv")[0]
-                vcf["base"] = vcf[["%A","%T","%C","%G"]].apply(lambda row: row[row > 5].nlargest(2).index.values, axis=1)
-                #clean
-                vcf["base"] = vcf["base"].astype(str).apply(lambda row: row.replace("%", "").replace("'","").replace("[","").replace("]",""))
-                vcf.loc[vcf["base"] == "", "base"] = 'A C T G'
-                deg_nuc = pd.read_csv(SCRIPT_PATH + "/refs/degenerate_nuc.csv", sep='\t')
+    # def cns(self, bam_path, cns_path, cns_x_path, min_depth_call, min_freq_thresh):
+    #     '''
+    #     @override        
+        
+    #     generate consesus sequence from VCF files.
+    #     rules:
+            
+        
+    #     Parameters
+    #     ----------
+
+    #     Returns
+    #     -------
+    #     None.
+
+    #     '''        
+    #     #override parameters 
+    #     min_freq_thresh = 10 #the minimal %depth of a base to be considered
+    #     min_depth_call = 0 # the minimal read depth in each position
+        
+    #     vcf_path = bam_path.replace("BAM","VCF")
+    #     for file in os.listdir(vcf_path):
+    #         if file.endswith("csv"):
+    #             vcf = pd.read_csv(vcf_path + file)
+    #             sample = file.split(".csv")[0]
                 
-                vcf = pd.merge(vcf, deg_nuc, on=["base"], how = "left")
-                vcf.to_csv(vcf_path + sample + ".csv", index = False)
+    #             #to determine consensus choose the 2 bases with depth > 5% 
+    #             #nlargest(2): the 2 largest depths 
+    #             #save the chosen bases in column "base"
+    #             vcf["base"] = vcf[["%A","%T","%C","%G"]].apply(lambda row: row[row > int(min_freq_thresh)].nlargest(2).index.values, axis=1)
                 
-                cns = "".join(vcf["cns"].to_list())
+    #             #clean unwanted characters
+    #             vcf["base"] = vcf["base"].astype(str).apply(lambda row: row.replace("%", "").replace("'","").replace("[","").replace("]",""))
+                
+    #             #if "base" is empty it means that no base had depth > 5%. set these cases to 'A C T G'
+    #             vcf.loc[vcf["base"] == "", "base"] = 'A C T G'
+                
+    #             #if depth <= min_depth_call set it as 'A C T G'
+    #             vcf.loc[vcf["depth"] <= int(min_depth_call), "base"] = 'A C T G'
+                
+    #             #this table contains the translation of "base" column to consensus nucleotide.
+    #             deg_nuc = pd.read_csv(SCRIPT_PATH + "/refs/degenerate_nuc.csv", sep='\t')
+                
+    #             #add the translation to consensus nucleotide
+    #             vcf = pd.merge(vcf, deg_nuc, on=["base"], how = "left")
+    #             vcf.to_csv(vcf_path + sample + ".csv", index = False)
+                
+    #             #convert consensus to string
+    #             cns = "".join(vcf["cns"].to_list())
                
-                with open(cns_path +sample + ".fasta", 'w') as f:
-                    f.write(">" + sample + '\n' + cns + '\n')
+    #             #save consensus
+    #             with open(cns_path +sample + ".fasta", 'w') as f:
+    #                 f.write(">" + sample + '\n' + cns + '\n')
             
     
     def mafft(self, not_aligned, aligned):
@@ -102,6 +176,24 @@ class hiv(general_pipe):
         mafft(self.reference, not_aligned, aligned)
     
     def qc_report(self, bam_path, depth_path, output_report):
+        '''
+        generate qc report considering each gene information.
+        generate "final_report" using excel_fasta()
+
+        Parameters
+        ----------
+        bam_path : str
+            path to bam folder.
+        depth_path : TYPE
+           path to depth folder
+        output_report : TYPE
+            path to qc report file
+
+        Returns
+        -------
+        None.
+
+        '''
         self.cut_genes("alignment/")
         self.excel_fasta("alignment/",self.metadata)
         fasta = pd.read_csv(output_report.replace("QC_report", "fasta.csv"), dtype={'SAMPLE_No_NGS': 'string'})

@@ -4,12 +4,16 @@
 Created on Mon Oct  9 08:05:15 2023
 
 @author: hagar
+
+
+hsv pipeline was generated to analysis Human Herpes Virus 1. 
+The main purpose is to generate fasta sequence for each gene and to find resistance mutations and polymorphysm.
 """
 
 #regions of JN555585
-ul30_reg = (62807, 66514) 	
-ul42_reg = (93112, 94578)
-ul23_reg = (46673, 47803)
+ul30_reg = (62807, 66515) 	
+ul42_reg = (93112, 94579)
+ul23_reg = (46672, 47803)
 
 
 import pandas as pd
@@ -24,12 +28,44 @@ SCRIPT_PATH = os.path.dirname(__file__) +'/'
 
 class hsv(general_pipe):
     def __init__(self, reference, fastq, minion, threads):
+        '''
+
+        Parameters
+        ----------
+        reference : str
+            path to the reference fasta file. no need to provide reference.
+        fastq : str
+            path to fastq folder
+        minion : BOOL
+            boolean to indicate if the the reads are minion based. defualt is illumina
+        threads : int
+            max number of threads for parts threads are available in this pipeline.
+        
+
+        Returns
+        -------
+        None.
+
+        '''
         super().__init__(reference, fastq, minion, threads)    
         #self.reference = SCRIPT_PATH +  "/refs/herpesvirus1_wg.fasta"
         self.reference = "/mnt/project1/projects/HERPES/HSV/refs/JN555585.fasta"
 
 #cut by gene
     def cut_genes(self, aln_path):
+        '''
+        cut the genes from the all_aligned file.
+
+        Parameters
+        ----------
+        aln_path : str
+            path to alignment fasta file.
+
+        Returns
+        -------
+        None.
+
+        '''
         fasta = get_sequences(aln_path + "all_aligned.fasta")
         write_sub_fasta(fasta, aln_path, ul30_reg, "reg_UL30")
         write_sub_fasta(fasta, aln_path, ul42_reg, "reg_UL42")
@@ -37,13 +73,18 @@ class hsv(general_pipe):
         
 #mutations
     def mutations(self):
+        '''
+        run mutation analysis for each gene seperatly.
+
+        Returns
+        -------
+        None.
+
+        '''
         create_dirs(["reports"]) 
-        regions_file_UL23 = SCRIPT_PATH + "refs/herpes1_regions_UL23.csv"
-        regions_file_UL30 = SCRIPT_PATH + "refs/herpes1_regions_UL30.csv"
-        regions_file_UL42 = SCRIPT_PATH + "refs/herpes1_regions_UL42.csv"
-        signatures.run("alignment/reg_UL23.fasta", regions_file_UL23, "reports/mutations_UL23.xlsx")
-        signatures.run("alignment/reg_UL30.fasta", regions_file_UL30, "reports/mutations_UL30.xlsx")
-        signatures.run("alignment/reg_UL42.fasta", regions_file_UL42, "reports/mutations_UL42.xlsx")
+        signatures.run("alignment/reg_UL23.fasta", "", "reports/mutations_UL23.xlsx")
+        signatures.run("alignment/reg_UL30.fasta", "", "reports/mutations_UL30.xlsx")
+        signatures.run("alignment/reg_UL42.fasta", "", "reports/mutations_UL42.xlsx")
 
 
     def resist_poly_reports(self):
@@ -56,51 +97,91 @@ class hsv(general_pipe):
 
         '''
         
-        ####resistant mutations - SNPs and deletions
-        resist = pd.read_excel(SCRIPT_PATH + "refs/hsv_resist_mut.xlsx", "SNP&del")
+        # load mutations database
+        resist = pd.read_csv(SCRIPT_PATH + "refs/herpesdrg-db.tsv", sep='\t').rename(columns=({"gene": "gene_name"}))
+        resist = resist[resist["virus"] == 'HSV1']
+        resist = resist[~resist['aa_change'].str.contains('del')] #temp
+        resist['aa_position_on_gene'] = resist['aa_change'].str[1:-1].astype(str)
+        
+        #open mutation tables for each gene
         mut_tbl_UL23 = pd.read_excel("reports/mutations_UL23.xlsx")
+        mut_tbl_UL23["gene_name"] = "UL23"
         mut_tbl_UL23["nt_position_on_genome"] = mut_tbl_UL23["nt_position_on_genome"] + ul23_reg[0]-1
         mut_tbl_UL30 = pd.read_excel("reports/mutations_UL30.xlsx")
+        mut_tbl_UL30["gene_name"] = "UL30"
         mut_tbl_UL30["nt_position_on_genome"] = mut_tbl_UL30["nt_position_on_genome"] + ul30_reg[0]-1
         mut_tbl_UL42 = pd.read_excel("reports/mutations_UL42.xlsx")
+        mut_tbl_UL42["gene_name"] = "UL42"
         mut_tbl_UL42["nt_position_on_genome"] = mut_tbl_UL42["nt_position_on_genome"] + ul42_reg[0]-1
-        
+        #concat all gene to one table
         mut_tbl = pd.concat([mut_tbl_UL23,mut_tbl_UL30,mut_tbl_UL42])
-        merged = mut_tbl.merge(resist, how='left', on=["gene_name","nt_position_on_gene" ,"X14112.1_NT"])
-        seq_num = int((len(merged.columns) - len(resist.columns)) /2 ) -3
-        save_format_xl(merged, seq_num, "reports/mutations_snp&del.xlsx")
-
-        #save only resistance mutations         
-        merged = merged[merged.filter(regex='_NT$').eq(merged['alt'], axis=0).any(axis=1)]
-        save_format_xl(merged, seq_num, "reports/resistance_mutations_snp&del.xlsx")
+        mut_tbl['aa_position_on_gene'] = mut_tbl['aa_position_on_gene'].astype(str)
+        # merge mutation table with the herpesdrg database
+        merged = mut_tbl.merge(resist, how='left', on=["gene_name","aa_position_on_gene"])
         
-        #######resistant mutations - insertions
-        res_inser = pd.read_excel(SCRIPT_PATH + "refs/hsv_resist_mut.xlsx", "insertions")
-        inser = pd.read_csv("alignment/all_aligned.fasta.insertions.csv")
-        
-        #reshape insertions df to match resist_insertions db and extrant insertions positions
-        inser = inser.set_index("strain").transpose().reset_index().rename(columns={"index" : "nt_position_on_genome"}) 
-        inser["nt_position_on_genome"] = inser["nt_position_on_genome"].str.split(" ").str[-1].astype({'nt_position_on_genome': 'int32'})
-        merged = inser.merge(res_inser, how='left', on=["nt_position_on_genome"])
-        merged.to_csv("reports/mutations_insertions.csv", index=False)
-        
-        ####polymorphism nucleotide
-        poly = pd.read_csv(SCRIPT_PATH + "refs/hsv_polymorphism_nucleotides.csv")
-        merged = mut_tbl.merge(poly, how='left', on=["gene_name","nt_position_on_gene" ,"X14112.1_NT"]).dropna()
-        merged = merged[merged.filter(regex='_NT$').eq(merged['alt'], axis=0).any(axis=1)]
-        save_format_xl(merged, seq_num, "reports/polymorphism.xlsx")
+        #save the mutation table in excel
+        seq_num = len(self.sample_fq_dict)
+        save_format_xl(merged, seq_num, "reports/mutations.xlsx")
 
         #remove script temp files:
         os.remove("reports/mutations_UL23.xlsx")
         os.remove("reports/mutations_UL30.xlsx")
         os.remove("reports/mutations_UL42.xlsx")            
     
+    
+    def resist_poly_summary(self):
+        samples = list(self.sample_fq_dict.keys())
+        drugs = ['Ganciclovir','Aciclovir', 'Cidofovir', 'Foscarnet', 'Brincidofovir',
+                 'Letermovir','Brivudine', 'Penciclovir', 'Tomeglovir',
+                 'Maribavir', 'Cyclopropavir','Amenamevir']
+
+        mut_tbl = pd.read_excel("reports/mutations.xlsx")
+        mut_tbl = mut_tbl[mut_tbl["R/S"] == 'R']
+        mut_tbl = mut_tbl[mut_tbl["mutation_id"].notna()]
+
+
+
+        drugs_sum = pd.DataFrame(columns=['sample', 'gene', 'mutation', 'drugs', 'notes'])
+        for index, row in mut_tbl.iterrows():
+            gene = row['gene_name']
+            for sample in samples:
+                if not row[sample + "_AA"] == row["JN555585.1_AA"]: #check if the sample has a mutation in this position
+                    mutation = row["aa_change"]
+                    if mutation[-1] == row[sample + "_AA"]: #check if the mutation is same as in database
+                        relevant_drugs = [drug for drug in drugs if not str(row[drug]) == 'nan' and not str(row[drug]) == ' ']
+                        for drug in relevant_drugs:    
+                            drugs_sum.loc[len(drugs_sum)] = [sample, gene, mutation, drug, row[drug]]
+
+        poly_df = drugs_sum[drugs_sum["notes"] == "Polymorphism"].drop(columns=["drugs","notes"]).drop_duplicates().sort_values(by=['sample'])
+        resist_df = drugs_sum[drugs_sum["notes"] != "Polymorphism"].drop_duplicates().sort_values(by=['sample'])
+        
+        poly_df.to_excel("reports/polymorphism_summary.xlsx", index=False)
+        resist_df.to_excel("reports/resist_summary.xlsx", index=False)
+        
         
 #override report
     def qc_report(self, bam_path, depth_path, output_report):
+        '''
+        run unique hsv functions.        
+        generate qc report considering the genes.
+        Parameters
+        ----------
+        bam_path : str
+            path to bam folder.
+        depth_path : str
+            path to depth folder.
+        output_report : str
+            path to qc report file.
+
+        Returns
+        -------
+        None.
+
+        '''
         self.cut_genes("alignment/")
         self.mutations()
         self.resist_poly_reports()
+        self.resist_poly_summary()
         
         general_qc = pd.DataFrame(columns=['sample', 'mapped%','mapped_reads','total_reads','cov_bases',"chimeric_read_count"])
         ul23_qc = pd.DataFrame(columns=['sample','coverage%','coverage_CNS_5%', 'mean_depth','max_depth','min_depth'])
