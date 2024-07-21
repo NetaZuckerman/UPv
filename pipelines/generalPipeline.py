@@ -440,4 +440,8 @@ class general_pipe():
         rscript_command = 'Rscript -e "rmarkdown::render(\'{}\', params = list(depth_path = \'{}\', qc_path = \'{}\'))"'.format("report.Rmd", depth_path, qc_path)
         subprocess.run(rscript_command, shell=True, check=True)
         os.remove(os.getcwd() + "/report.Rmd")
-        
+    
+    
+    def depth_plots(self, depth_path):
+        utils.create_dirs([depth_path+'plots'])
+        subprocess.call("Rscript " + MAIN_SCRIPT_DIR + "utils/depth_plots.R " + depth_path + " " + depth_path+'plots' , shell=True)
