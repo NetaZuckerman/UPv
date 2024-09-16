@@ -132,28 +132,38 @@ class de_novo(general_pipe):
            df = df[df['bitscore'].isin(best_refs)]
            df.to_csv('blast/filtered_'+sample+".csv", index=False)
            
-           #create multi-fasta contains only the contigs blast found
-           contigs_list = df['query_seq_id'].tolist()
+           
            #write fasta file with the selected contigs
            filtered_file = open("fasta/selected_contigs/"+sample+".fasta", 'a')
            #move spades contigs 
-           shutil.copyfile("spades/spades_results/"+sample+"/transcripts.fasta","fasta/all_contigs/" +sample+".fasta")
-           
-           for record in SeqIO.parse("fasta/all_contigs/"+sample+".fasta", "fasta"):
-               if record.description in contigs_list:
-                   filtered_file.write(record.format("fasta"))
-           filtered_file.close()
-       #shutil.rmtree("spades/spades_results/")
-            #select the reference of the longest contig
-           longest_contig = df.loc[df['query_length'].idxmax()]
-           reference_id = longest_contig['subject_seq_id']
-           reference_id = reference_id.split("|")[1].split("|")[0] if "|" in reference_id else reference_id
-           reference_name = longest_contig['subject_title']
-           blast_score = longest_contig['bitscore']
-           ident = longest_contig['identity']
-           coverage = longest_contig['query_coverage']
-           sample_ref.loc[len(sample_ref)] = [str(sample),reference_id, reference_name, coverage, ident, blast_score]
+           if os.path.isfile("spades/spades_results/"+sample+"/transcripts.fasta"):
+               shutil.copyfile("spades/spades_results/"+sample+"/transcripts.fasta","fasta/all_contigs/" +sample+".fasta")
+               
+               #create multi-fasta contains only the contigs blast found
+               contigs_list = df['query_seq_id'].tolist()
+               for record in SeqIO.parse("fasta/all_contigs/"+sample+".fasta", "fasta"):
+                   if record.description in contigs_list:
+                       filtered_file.write(record.format("fasta"))
+               filtered_file.close()
+       
+               #select the reference of the longest contig
+               longest_contig = df.loc[df['query_length'].idxmax()]
+               reference_id = longest_contig['subject_seq_id']
+               reference_id = reference_id.split("|")[1].split("|")[0] if "|" in reference_id else reference_id
+               reference_name = longest_contig['subject_title']
+               blast_score = longest_contig['bitscore']
+               ident = longest_contig['identity']
+               coverage = longest_contig['query_coverage']
+               sample_ref.loc[len(sample_ref)] = [str(sample),reference_id, reference_name, coverage, ident, blast_score]
+           else:
+               sample_ref.loc[len(sample_ref)] = [str(sample), "","","","",""]
+            
+              
+          
+        
+        #shutil.rmtree("spades/spades_results/")
         #sample_ref.to_csv("/home/hagar/sample_ref.csv", index = False)
+        
         return sample_ref
     
     #export reference sequence fasta 
@@ -169,6 +179,8 @@ class de_novo(general_pipe):
         for i, row in self.sample_ref.iterrows():
             ref_id = row["reference_id"]
             sample = row["sample"]
+            if not ref_id:
+                continue
             for record in SeqIO.parse(self.reference, "fasta"):
                 if ref_id in record.description:
                     ref_file = open("fasta/selected_references/"+sample+".fasta", 'a')

@@ -48,8 +48,7 @@ class hsv(general_pipe):
 
         '''
         super().__init__(reference, fastq, minion, threads)    
-        #self.reference = SCRIPT_PATH +  "/refs/herpesvirus1_wg.fasta"
-        self.reference = "/mnt/project1/projects/HERPES/HSV/refs/JN555585.fasta"
+        self.reference = SCRIPT_PATH + "refs/JN555585.fasta"
 
 #cut by gene
     def cut_genes(self, aln_path):
@@ -207,9 +206,9 @@ class hsv(general_pipe):
                     ul42_qc.loc[len(ul42_qc.index)] = [sample, cover42, cns5_cover42, mean_depth42, max_depth42, min_depth42]
                     
         with pd.ExcelWriter('QC/QC_report.xlsx') as writer:  
-            general_qc.to_excel(writer, sheet_name='general')
-            ul23_qc.to_excel(writer, sheet_name='UL23')
-            ul30_qc.to_excel(writer, sheet_name='UL30')
-            ul42_qc.to_excel(writer, sheet_name='UL42')
+            general_qc.to_excel(writer, sheet_name='general', index=False)
+            ul23_qc.to_excel(writer, sheet_name='UL23', index=False)
+            ul30_qc.to_excel(writer, sheet_name='UL30', index=False)
+            ul42_qc.to_excel(writer, sheet_name='UL42', index=False)
                         
          

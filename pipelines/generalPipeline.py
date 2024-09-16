@@ -29,6 +29,10 @@ SORT = "samtools sort -@ %(threads)s %(output_path)s%(sample)s.mapped.bam -o %(o
 CHIMER = "samtools view %(output_path)s%(sample)s.bam |  grep 'SA:' > %(output_path)s%(sample)s.chimeric_reads.txt"
 DEPTH = "samtools depth -a %(bam_path)s%(bam_file)s > %(depth_path)s%(sample)s.txt"
 CNS = "samtools mpileup -A %(bam_path)s%(bam_file)s | ivar consensus -t %(min_freq_thresh)s -m %(min_depth_call)s -p %(cns_path)s%(sample)s.fa"
+#generates bam files for minion
+MEDAKA_HAP = "medaka_haploid_variant -i %(fastq)s -r %(ref)s -o %(bam_path)s -f"
+#generates consensus for minion
+MEDAKA_STITCH = "medaka stitch %(hdf)s %(ref)s %(cns)s  --min_depth %(min_depth_call)s  --fill_char -" 
 
 #MAFFT commands
 ALL_NOT_ALIGNED =   "cat %(dir)s > alignment/all_not_aligned.fasta"
@@ -63,16 +67,22 @@ class general_pipe():
         self.reference = reference
         self.fastq = fastq
         self.minion = minion
-        if not minion:
-            #self.sample_fq_dict {sample: fastq R1 file} 
-            self.sample_fq_dict = utils.get_sample_fq_dict(self.fastq)
-        else:
-            #self.sample_fq_dict {sample: fastq path}  
+        if minion:
             #minion fastq are organized in folders called "barcode"s
-            self.sample_fq_dict = utils.get_barcodes(minion)
+            self.merge_fastq_minion(minion) #merge all barcodes fastq files into one file
+            self.fastq = "fastq/"
+
+        #self.sample_fq_dict {sample: fastq R1 file} 
+        self.sample_fq_dict = utils.get_sample_fq_dict(self.fastq)
         self.threads = threads
 
 
+    def merge_fastq_minion(self, minion):
+        utils.create_dirs(["fastq"])
+        for sample, barcode in utils.get_barcodes(minion).items():
+            subprocess.run('cat ' + self.fastq + barcode + '/* > fastq/' + sample + ".fastq.gz", shell=True)
+           
+            
     def mapping(self):
         '''
         generate bam file from paired-end fastq (R1,R2).
@@ -82,22 +92,25 @@ class general_pipe():
         '''
         subprocess.call(INDEX % dict(reference=self.reference), shell=True)
 
-        filter_out_code = 2052 #read unmapped + supplementary alignment
         
         for sample, fq in self.sample_fq_dict.items():
             if self.minion:
-                barcode = fq
-                subprocess.call(MINIMAP % dict(ref=self.reference, fastq_dir=self.fastq+barcode,\
-                                               output="BAM/"+sample), shell=True)
+                subprocess.call(MEDAKA_HAP % dict(fastq = self.fastq + fq , ref=self.reference, \
+                                                   bam_path="BAM/"+sample), shell=True)
+                    
             else:
                 r1 = fq
                 r2 = r1.replace("R1","R2")
                 subprocess.call(BWM_MEM % dict(threads = self.threads, reference=self.reference,r1=self.fastq + r1, r2=self.fastq + r2, sample=sample, output_path="BAM/"), shell=True) #map to reference
+                self.process_bam(sample)
+                
             
-            subprocess.call(FILTER_BAM % dict(threads = self.threads, sample=sample, filter_out_code = filter_out_code, output_path="BAM/"), shell=True) #keep reads according to the filter code: https://broadinstitute.github.io/picard/explain-flags.html
-            subprocess.call(SORT % dict(threads = self.threads, sample=sample, output_path="BAM/"), shell=True)         
-            #chimeric reads: find reads that where mapped to more then one region in the genome
-            subprocess.call(CHIMER % dict(sample=sample, output_path="BAM/"), shell=True)
+    def process_bam(self, sample):
+        filter_out_code = 2052 #read unmapped + supplementary alignment
+        subprocess.call(FILTER_BAM % dict(threads = self.threads, sample=sample, filter_out_code = filter_out_code, output_path="BAM/"), shell=True) #keep reads according to the filter code: https://broadinstitute.github.io/picard/explain-flags.html
+        subprocess.call(SORT % dict(threads = self.threads, sample=sample, output_path="BAM/"), shell=True)         
+        #chimeric reads: find reads that where mapped to more then one region in the genome
+        subprocess.call(CHIMER % dict(sample=sample, output_path="BAM/"), shell=True)
         
     def variant_calling(self, bam_path, vcf_path):
         '''
@@ -200,7 +213,51 @@ class general_pipe():
             vcf.to_excel(vcf_path + sample + '.xlsx', index=False)
             os.remove(vcf_path + vcf_file)
                 
+    def move_medaka_files(self, bam_path):
+        for sample in os.listdir(bam_path):
+            shutil.copy(bam_path + sample + "/calls_to_ref.bam", bam_path + sample + ".bam")
+            self.process_bam(sample)
+    
+    def cns_minion(self, bam_path, cns_path, cns_x_path, min_depth_call):
+        for sample in os.listdir(bam_path):
+            hdf_file = bam_path + sample + '/consensus_probs.hdf'
+            
+            cns_output = cns_path + sample + '.fa'
+            #CNS - min depth to call = 1
+            subprocess.call(MEDAKA_STITCH % dict(hdf=hdf_file, ref=self.reference, cns=cns_output, sample=sample, \
+                                                 min_depth_call=1), shell=True)
+            #change header
+            subprocess.run(f"sed -i '1s/.*/>{sample}/' {cns_output}", shell=True)
+        
+            cns_output = cns_x_path + sample + '.fa'
+            #CNS - min depth to call = X (default = 5)
+            subprocess.call(MEDAKA_STITCH % dict(hdf=hdf_file, ref=self.reference, cns=cns_output, \
+                                                 min_depth_call=min_depth_call), shell=True)
+            #change header
+            subprocess.run(f"sed -i '1s/.*/>{sample}/' {cns_output}", shell=True)
+        
+        
     #find mapping depth and consensus sequence 
+    def cns_ngs(self, bam_path, cns_path, cns_x_path, min_depth_call, min_freq_thresh):
+        for bam_file in os.listdir(bam_path):
+            if "sorted" in bam_file and "bai" not in bam_file:
+                sample = bam_file.split(".mapped")[0] + bam_file.split(".sorted")[1].split(".bam")[0]
+                #consensus
+                #CNS - min depth to call = 1
+                subprocess.call(CNS % dict(bam_path=bam_path, bam_file=bam_file, cns_path=cns_path,
+                                           sample=sample, min_freq_thresh=min_freq_thresh, min_depth_call=1), shell=True) 
+                
+                #CNS - min depth to call = X (default = 5)
+                subprocess.call(CNS % dict(bam_path=bam_path, bam_file=bam_file, 
+                                           cns_path=cns_x_path, sample=sample, min_freq_thresh=min_freq_thresh,
+                                           min_depth_call=min_depth_call), shell=True)
+               
+                #remove qual files
+                os.remove(cns_path+sample+".qual.txt")
+                os.remove(cns_x_path+sample+".qual.txt")
+                utils.fix_cns_header(cns_path)
+                utils.fix_cns_header(cns_x_path)
+                
     def cns(self, bam_path, cns_path, cns_x_path, min_depth_call, min_freq_thresh):
         '''
          Generate consensus sequences from sorted bam file.
@@ -223,25 +280,12 @@ class general_pipe():
          -------
          None.
          '''
-        for bam_file in os.listdir(bam_path):
-            if "sorted" in bam_file and "bai" not in bam_file:
-                sample = bam_file.split(".mapped")[0] + bam_file.split(".sorted")[1].split(".bam")[0]
-                #consensus
-                #CNS - min depth to call = 1
-                subprocess.call(CNS % dict(bam_path=bam_path, bam_file=bam_file, cns_path=cns_path,
-                                           sample=sample, min_freq_thresh=min_freq_thresh, min_depth_call=1), shell=True) 
-                
-                #CNS - min depth to call = X (default = 5)
-                subprocess.call(CNS % dict(bam_path=bam_path, bam_file=bam_file, 
-                                           cns_path=cns_x_path, sample=sample, min_freq_thresh=min_freq_thresh,
-                                           min_depth_call=min_depth_call), shell=True)
-               
-                #remove qual files
-                os.remove(cns_path+sample+".qual.txt")
-                os.remove(cns_x_path+sample+".qual.txt")
-                utils.fix_cns_header(cns_path)
-                utils.fix_cns_header(cns_x_path)
-        
+        if self.minion:
+            self.cns_minion(bam_path, cns_path, cns_x_path, min_depth_call)
+            self.move_medaka_files(bam_path)
+        else:
+            self.cns_ngs(bam_path, cns_path, cns_x_path, min_depth_call, min_freq_thresh)
+            
     
     def depth(self, bam_path, depth_path):
         '''
@@ -445,3 +489,9 @@ class general_pipe():
     def depth_plots(self, depth_path):
         utils.create_dirs([depth_path+'plots'])
         subprocess.call("Rscript " + MAIN_SCRIPT_DIR + "utils/depth_plots.R " + depth_path + " " + depth_path+'plots' , shell=True)
+        
+        
+    def minion_plots(self):
+        if self.minion:
+            utils.create_dirs(['plots'])
+            subprocess.call("Rscript " + MAIN_SCRIPT_DIR + "utils/nano_read_lens.R " + self.fastq + " plots/", shell=True)

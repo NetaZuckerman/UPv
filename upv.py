@@ -98,6 +98,7 @@ if __name__ == "__main__":
             
             pipe.qc_report("BAM/", "QC/depth/", 'QC/QC_report') #temp comment
             pipe.depth_plots("QC/depth/")
+            pipe.minion_plots()
             
     else: #yes mini - input is fasta, no need to analyse fastq
         if not os.path.exists("alignment"):    
