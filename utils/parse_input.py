@@ -20,6 +20,7 @@ def parser():
         parser.add_argument('--flu_de_novo', action='store_true', help='Perform de-novo analysis to identify best match segments')
         parser.add_argument('--polio', action='store_true', help="PolioVirus analysis") #store_true will store the argument as true
         parser.add_argument('--HIV', help="HIV analysis for genes: PR, RT and Integrase. do not provide reference sequnce. provide format table.") #store_true will store the argument as true
+        parser.add_argument('--sensitive', action='store_true', help="sensitive local alignment for HIV pipeline.") #store_true will store the argument as true
         parser.add_argument('--HSV', action='store_true', help="HSV analysis for genes: UL23, UL30, UL42. do not provide reference sequnce.") #store_true will store the argument as true
         parser.add_argument('-c', '--cmv', action='store_true', help="cetomegalovirus (human herpesvirus 5) analysis") #store_true will store the argument as true
         parser.add_argument('--minion', help="use minimap2 to analyse minion reads. provide barcodes.csv (csv with 2 columns: barcode|sample)") #store_true will store the argument as true
@@ -32,5 +33,5 @@ def parser():
         parser.add_argument('--cns_min_depth_call' ,default='5', help='Minimum depth to call consensus. (Default: 5). Note- CNS folder will contain minimum depth of 1. CNS_X will contain minimum depth of X.') 
         args = parser.parse_args()
         return args.reference, args.input, args.threads, args.flu, args.de_novo, args.flu_de_novo, args.polio, args.cmv, args.HIV, \
-                   args.HSV, args.minion, args.gb_file, args.regions_file, args.mutations_table, \
+                   args.sensitive, args.HSV, args.minion, args.gb_file, args.regions_file, args.mutations_table, \
                        args.mini, args.vcf,args.cns_min_freq_thresh, args.cns_min_depth_call, args.multi_ref, args.drop_joint_reads

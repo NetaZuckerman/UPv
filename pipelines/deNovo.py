@@ -73,6 +73,7 @@ class de_novo(general_pipe):
             r2 = r1.replace("R1","R2")
             create_dirs(["spades/spades_results/"+sample])#temp comment
             subprocess.call(RUN_SPADES % dict( r1=self.fastq + r1, r2=self.fastq + r2, output_path="spades/spades_results/"+ sample + "/"), shell=True)
+            # subprocess.call(RUN_SPADES % dict( r1=self.fastq + r1, output_path="spades/spades_results/"+ sample + "/"), shell=True)
 
     #run blastn on spades contigs - trascript.fasta  
     def run_blast(self):

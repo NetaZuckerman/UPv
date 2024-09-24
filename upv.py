@@ -30,7 +30,7 @@ if __name__ == "__main__":
     DEBUG = False
     
     reference, fastq, threads, flu_flag, de_novo_flag, flu_de_novo_flag, polio_flag, cmv_flag, hiv_flag, \
-        hsv_flag, minion_flag, gb_file, regions_file, mutations_flag, mini, \
+        sensitive_hiv, hsv_flag, minion_flag, gb_file, regions_file, mutations_flag, mini, \
             vcf, cns_min_freq_thresh, cns_min_depth_call, multi_ref_flag, drop_joint_reads = parse_input.parser()
     
     with open("log.txt",'w') as log:
@@ -66,7 +66,7 @@ if __name__ == "__main__":
                 pipe = polio(reference,fastq, minion_flag, threads)
             
             elif hiv_flag:
-                pipe = hiv(reference,fastq, minion_flag, threads, hiv_flag)
+                pipe = hiv(reference,fastq, minion_flag, threads, hiv_flag, sensitive_hiv)
                 
             elif hsv_flag:
                 pipe = hsv(reference,fastq, minion_flag, threads)

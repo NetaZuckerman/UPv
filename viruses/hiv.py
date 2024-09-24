@@ -25,13 +25,15 @@ import csv
 SCRIPT_PATH = os.path.dirname(__file__)
 cat = "cat %(cns)s* > %(aln_path)sall_not_aligned.fasta"
 align = "augur align --sequences %(not_aligned)s --reference-sequence %(reference)s --output %(aligned)s"
+BOWTIE_INDEX = "bowtie2-build %(reference)s.fasta %(reference)s"
+BOWTIE2 = "bowtie2 -x %(reference)s -1 %(r1)s -2 %(r2)s --threads %(threads)s  --very-sensitive-local | samtools view -@ %(threads)s -b - > %(output_path)s%(sample)s.bam"
 #*gene_regions*#
 pr_reg = (2252,2550)
 rt_reg = (2661,3294)
 int_reg = (4230, 5094)
 
 class hiv(general_pipe):
-    def __init__(self, reference, fastq,minion, threads, metadata):
+    def __init__(self, reference, fastq,minion, threads, metadata, sensitive):
         '''
         
 
@@ -57,6 +59,7 @@ class hiv(general_pipe):
         '''
         super().__init__(reference, fastq, minion, threads)    
         self.metadata = metadata
+        self.sensitive = sensitive
  
     
     def cut_genes(self, aln_path):
@@ -110,7 +113,18 @@ class hiv(general_pipe):
         mergi = pd.merge(format_df, df, on=["SAMPLE_No_NGS","Region_Protein"], how = "left")
         mergi.to_excel("QC/final_report.xlsx", index=False)
         
+    def mapping(self):
         
+        if self.sensitive:
+            subprocess.call(BOWTIE_INDEX % dict(reference=self.reference.split(".fa")[0]), shell=True)
+            for sample, fq in self.sample_fq_dict.items():
+                r1 = fq
+                r2 = r1.replace("R1","R2")
+                subprocess.call(BOWTIE2 % dict(threads = self.threads, reference=self.reference.split(".fa")[0],r1=self.fastq + r1, r2=self.fastq + r2, sample=sample, output_path="BAM/"), shell=True) #map to reference
+                super().process_bam(sample)
+        else:
+            super().mapping()
+            
     # def cns(self, bam_path, cns_path, cns_x_path, min_depth_call, min_freq_thresh):
     #     '''
     #     @override        
