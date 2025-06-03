@@ -58,6 +58,7 @@ class hiv(general_pipe):
 
         '''
         super().__init__(reference, fastq, minion, threads)    
+        self.reference = SCRIPT_PATH + "/refs/K03455.1_HIV.fasta"
         self.metadata = metadata
         self.sensitive = sensitive
  

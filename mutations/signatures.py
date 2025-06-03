@@ -134,17 +134,33 @@ def aa_sum(df, sequences):
     None. it updates the results in the DataFrame
 
     '''
-    aa_groups = pd.read_csv("/home/hagar/UPv/mutations/AAproperties.txt", sep = '\t')
+    
+
+    aa_groups = pd.read_csv(MAIN_SCIPT_DIR + "mutations/AAproperties.txt", sep = '\t')
+    
+    
+    
     for index, row in df.iloc[:,-(len(sequences)):].iterrows():
         row.reset_index(drop=True,inplace=True)
         no_x_aa = list(dict.fromkeys([x for x in row.to_list() if x != "X"]))
+        
+        # import pdb; pdb.set_trace()
+
+        
         if len(no_x_aa) > 1:
             df.at[index,"R/S"] =  "R"
+    
             if len(no_x_aa) == 2:
-                groups = aa_groups.loc[aa_groups['Abbv1'] == row.iloc[0], 'properties'].iloc[0] + "(" + row.iloc[0] +"), " 
-                no_x_aa.remove(row.iloc[0])
-                groups += aa_groups.loc[aa_groups['Abbv1'] == no_x_aa[0], 'properties'].iloc[0] + "(" + no_x_aa[0] +")"
-                df.at[index, "aa_group"] = groups
+                
+                try:
+                    groups = aa_groups.loc[aa_groups['Abbv1'] == row.iloc[0], 'properties'].iloc[0] + "(" + row.iloc[0] +"), " 
+                    no_x_aa.remove(row.iloc[0])
+                    groups += aa_groups.loc[aa_groups['Abbv1'] == no_x_aa[0], 'properties'].iloc[0] + "(" + no_x_aa[0] +")"
+                    df.at[index, "aa_group"] = groups
+                except Exception as e:
+                    print(f"Error occurred at index {index} with row: {row}")
+                    # pdb.post_mortem()  # This will invoke the debugger after the exception occurs
+                    break  # Stop after the first error for debugging
             if len(no_x_aa) > 2:
                 groups = aa_groups.loc[aa_groups['Abbv1'] == row.iloc[0], 'properties'].iloc[0] + "(" + row.iloc[0] +"), " 
                 no_x_aa.remove(row.iloc[0])
@@ -154,6 +170,58 @@ def aa_sum(df, sequences):
                 df.at[index, "aa_group"] = groups
         else:
             df.at[index,"R/S"] =  "S"
+
+def get_codon(seq, position, region):
+    start = region[0]
+    end = region[1]
+    strand= region[2]
+    
+    
+    
+    #get codon
+    if strand == "-":
+        pos_on_gene = end - position + 1
+        mod = pos_on_gene % 3
+        
+        if mod == 0:
+            codon_pos = (position + 2, position + 1, position)
+        if mod == 1:
+            codon_pos = (position, position - 1, position - 2)
+        if mod == 2:
+            codon_pos = (position + 1, position, position - 1)
+            
+        codon = seq[codon_pos[0]-1] + seq[codon_pos[1]-1] + seq[codon_pos[2]-1]
+        codon = str(Seq(codon).complement())
+    else:
+        
+        pos_on_gene = position - start 
+        mod = pos_on_gene % 3
+        if mod == 0:  # third nuc on the codon
+            codon_pos = (position, position + 1, position + 2)
+        if mod == 1:  # first nuc on the codon
+            codon_pos = (position -1 , position, position + 1)
+        if mod == 2:  # second nuc on the codon
+            codon_pos = (position - 2, position -1, position)
+        
+        codon = seq[codon_pos[0]-1] + seq[codon_pos[1]-1] + seq[codon_pos[2]-1]
+        
+    return codon, mod+1
+
+def get_reference_codons(mutations_position, seq, regions, gene_names):
+    codons = []
+    codons_pos =[]
+    for i in range(len(mutations_position)):
+        if 'UTR' in gene_names[i] :
+            codons.append('X')
+            codons_pos.append('X')
+
+        else:
+            pos = mutations_position[i]
+            region = regions[gene_names[i]]
+            codon, codon_pos = get_codon(seq, pos, region)
+            codons.append(codon)
+            codons_pos.append(codon_pos)
+    return codons, codons_pos
 
 def get_single_aa(seq, position, region):
     '''
@@ -174,38 +242,7 @@ def get_single_aa(seq, position, region):
         the translated amino acid.
 
     '''
-    start = region[0]
-    end = region[1]
-    strand= region[2]
-    
-    
-
-    #get codon
-    if strand == "-":
-        pos_on_gene = end - position + 1
-        mod = pos_on_gene % 3
-        if mod == 0:
-            codon_pos = (position + 2, position + 1, position)
-        if mod == 1:
-            codon_pos = (position, position - 1, position - 2)
-        if mod == 2:
-            codon_pos = (position + 1, position, position - 1)
-            
-        codon = seq[codon_pos[0]-1] + seq[codon_pos[1]-1] + seq[codon_pos[2]-1]
-        codon = str(Seq(codon).complement())
-    else:
-        
-        pos_on_gene = position - start 
-        
-        mod = pos_on_gene % 3
-        if mod == 0:  # third nuc on the codon
-            codon_pos = (position, position + 1, position + 2)
-        if mod == 1:  # first nuc on the codon
-            codon_pos = (position -1 , position, position + 1)
-        if mod == 2:  # second nuc on the codon
-            codon_pos = (position - 2, position -1, position)
-        
-        codon = seq[codon_pos[0]-1] + seq[codon_pos[1]-1] + seq[codon_pos[2]-1]
+    codon, codon_pos = get_codon(seq, position, region)
     
     if codon in translate_table:
         aa = translate_table[codon] if not '-' in codon and not 'N' in codon else 'X'
@@ -278,7 +315,7 @@ def only_show_snp(df):
     return df
 
 
-def run(alignment_file,regions_csv,output, show_all =  False):
+def run(alignment_file,regions_csv,output, annotation_db, show_all =  False):
     
     
     '''
@@ -290,7 +327,8 @@ def run(alignment_file,regions_csv,output, show_all =  False):
     # sequences = drop_low_qc(sequences)
     
     df = pd.DataFrame()
-    seq_len= len(list(sequences.values())[0])
+    ref_seq = list(sequences.values())[0]
+    seq_len= len(ref_seq)
     mutations_positions_nt = range(1, seq_len+1, 1)
     mutations_by_sample_nt = mutations_by_sample(mutations_positions_nt,sequences)
     
@@ -300,14 +338,18 @@ def run(alignment_file,regions_csv,output, show_all =  False):
         regions = {"unknown": (1,seq_len,'+')}
     else:    
         regions = get_regions(regions_csv)
-        
+    
+    
+    
     gene_names, position_on_gene_nt, position_on_gene_aa = get_gene(mutations_positions_nt, regions)
     df["gene_name"] = gene_names
     df["nt_position_on_gene"] = position_on_gene_nt 
     df["nt_position_on_genome"] = mutations_positions_nt
     
     mutations_by_sample_aa = get_all_aa(mutations_positions_nt, sequences, gene_names, regions)
-
+    
+    ref_codons, ref_cod_pos = get_reference_codons(mutations_positions_nt, ref_seq, regions, gene_names)
+    
     for sample, mut in mutations_by_sample_nt.items():
         df[sample+"_NT"] = mut
     
@@ -317,11 +359,27 @@ def run(alignment_file,regions_csv,output, show_all =  False):
    
     aa_sum(df, sequences)
     
+    df["refernce_codon"] = ref_codons
+    df["position_on_condon"] = ref_cod_pos
+
     if not show_all:
         df = only_show_snp(df)
+    
+    df["group_change"] = 0
+    for index, row in df.iterrows():
+        if row["R/S"] == "S":
+            continue
+        if row["aa_group"]:
+            aa = row["aa_group"].split(",")
+            if not aa[0].split("(")[0].strip() == aa[1].split("(")[0].strip():
+                df.at[index,'group_change']=1
+
+    if annotation_db:
+        annotation = pd.read_csv(annotation_db)
+        df = df.merge(annotation, how='left', on=["gene_name","aa_position_on_gene"])    
         
     save_format_xl(df, len(sequences)-1, output)
 
     
 if __name__ == "__main__":
-    run(argv[1], argv[2], argv[3])
+    run(argv[1], argv[2], argv[3], argv[4])

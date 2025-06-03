@@ -19,4 +19,4 @@ Serine	Ser	S	PolarNeutral	5
 Threonine	Thr	T	PolarNeutral	5
 Glycine	Gly	G	Unique1	6
 Proline	Pro	P	Unique2	7
-StopCodon	StopCodon	_	StopCodon	8
+StopCodon	StopCodon	*	StopCodon	8

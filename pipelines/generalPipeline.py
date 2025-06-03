@@ -16,6 +16,9 @@ import csv
 from utils import utils
 import shutil
 import pandas as pd
+from pathlib import Path
+from Bio import SeqIO
+
 
 MAIN_SCRIPT_DIR = os.path.dirname(__file__)+'/../'
 
@@ -68,9 +71,9 @@ class general_pipe():
         self.fastq = fastq
         self.minion = minion
         if minion:
-            #minion fastq are organized in folders called "barcode"s
-            self.merge_fastq_minion(minion) #merge all barcodes fastq files into one file
-            self.fastq = "fastq/"
+            # minion fastq are organized in folders called "barcode"s
+            # self.merge_fastq_minion(minion) #merge all barcodes fastq files into one file
+            self.fastq = "fastq_temp/"
 
         #self.sample_fq_dict {sample: fastq R1 file} 
         self.sample_fq_dict = utils.get_sample_fq_dict(self.fastq)
@@ -78,10 +81,13 @@ class general_pipe():
 
 
     def merge_fastq_minion(self, minion):
-        utils.create_dirs(["fastq"])
+        utils.create_dirs(["fastq_temp"])
         for sample, barcode in utils.get_barcodes(minion).items():
-            subprocess.run('cat ' + self.fastq + barcode + '/* > fastq/' + sample + ".fastq.gz", shell=True)
+            subprocess.run('cat ' + self.fastq + barcode + '/* > fastq_temp/' + sample + ".fastq.gz", shell=True)
            
+    def move_medaka_files(self, sample):
+        shutil.copy("BAM/" + sample + "/calls_to_ref.bam", "BAM/" + sample + ".bam")
+        self.process_bam(sample)
             
     def mapping(self):
         '''
@@ -97,7 +103,7 @@ class general_pipe():
             if self.minion:
                 subprocess.call(MEDAKA_HAP % dict(fastq = self.fastq + fq , ref=self.reference, \
                                                    bam_path="BAM/"+sample), shell=True)
-                    
+                self.move_medaka_files(sample)
             else:
                 r1 = fq
                 r2 = r1.replace("R1","R2")
@@ -213,29 +219,65 @@ class general_pipe():
             vcf.to_excel(vcf_path + sample + '.xlsx', index=False)
             os.remove(vcf_path + vcf_file)
                 
-    def move_medaka_files(self, bam_path):
-        for sample in os.listdir(bam_path):
-            shutil.copy(bam_path + sample + "/calls_to_ref.bam", bam_path + sample + ".bam")
-            self.process_bam(sample)
+    
     
     def cns_minion(self, bam_path, cns_path, cns_x_path, min_depth_call):
         for sample in os.listdir(bam_path):
-            hdf_file = bam_path + sample + '/consensus_probs.hdf'
+            if not sample.endswith(".bam") and not sample.endswith(".txt"):
+                sample_dir = Path(bam_path) / sample
+                hdf_file = sample_dir / "consensus_probs.hdf"
+                bam_file = f"{bam_path}/{sample}.mapped.bam"
             
-            cns_output = cns_path + sample + '.fa'
-            #CNS - min depth to call = 1
-            subprocess.call(MEDAKA_STITCH % dict(hdf=hdf_file, ref=self.reference, cns=cns_output, sample=sample, \
-                                                 min_depth_call=1), shell=True)
-            #change header
-            subprocess.run(f"sed -i '1s/.*/>{sample}/' {cns_output}", shell=True)
-        
-            cns_output = cns_x_path + sample + '.fa'
-            #CNS - min depth to call = X (default = 5)
-            subprocess.call(MEDAKA_STITCH % dict(hdf=hdf_file, ref=self.reference, cns=cns_output, \
-                                                 min_depth_call=min_depth_call), shell=True)
-            #change header
-            subprocess.run(f"sed -i '1s/.*/>{sample}/' {cns_output}", shell=True)
-        
+                # First run: min_depth = 1
+                for depth, out_dir in [(1, cns_path), (min_depth_call, cns_x_path)]:
+                    cns_output = Path(out_dir) / f"{sample}.fa"
+            
+                    # Run medaka stitch
+                    subprocess.call(MEDAKA_STITCH % dict(
+                        hdf=hdf_file,
+                        ref=self.reference,
+                        cns=cns_output,
+                        sample=sample,
+                        min_depth_call=depth
+                    ), shell=True)
+            
+                    # Filter used references
+                    used_refs_file = sample_dir / f"used_refs_depth{depth}.txt"
+                    filtered_cns = sample_dir / f"filtered_consensus_depth{depth}.fa"
+                    
+                    #find which references are mapped
+                    subprocess.run(
+                        f"samtools idxstats {bam_file} | awk '$3 > 0 {{print $1}}' > {used_refs_file}",
+                        shell=True,
+                        check=True
+                    )
+                    #get only mapped consensus
+                    subprocess.run(
+                        f"seqkit grep -f {used_refs_file} {cns_output} > {filtered_cns}",
+                        shell=True,
+                        check=True
+                    )
+                    os.remove(cns_output)
+                    
+                    #if file empty (no cns) save empty cns file
+                    if  os.path.getsize(filtered_cns) == 0:
+                        subprocess.run(
+                            f"cat {filtered_cns} > {cns_output}",
+                            shell=True,
+                            check=True
+                        )
+                    else:
+                    
+                        #split and fix cns name
+                        for record in SeqIO.parse(filtered_cns, "fasta"):
+                            ref_name = record.id
+                            output_path =  f"{out_dir}/{sample}_REF.{ref_name}.fa"
+                            record.id = sample
+                            record.description = ""
+                            SeqIO.write(record, output_path, "fasta")
+                        
+
+                shutil.rmtree(sample_dir, ignore_errors=True)
         
     #find mapping depth and consensus sequence 
     def cns_ngs(self, bam_path, cns_path, cns_x_path, min_depth_call, min_freq_thresh):
@@ -282,7 +324,6 @@ class general_pipe():
          '''
         if self.minion:
             self.cns_minion(bam_path, cns_path, cns_x_path, min_depth_call)
-            self.move_medaka_files(bam_path)
         else:
             self.cns_ngs(bam_path, cns_path, cns_x_path, min_depth_call, min_freq_thresh)
             

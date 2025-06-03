@@ -64,10 +64,9 @@ class multi_ref (general_pipe):
                 if self.drop_joint_reads:
                     uniq_file = bam_file.replace("bam", "uniq.bam")
                     subprocess.call(UNIQ_READS % dict(bam_file = bam_path + bam_file, ouput = bam_path + uniq_file), shell=True)
-                    subprocess.call(SPLIT % dict(bam=bam_path + uniq_file), shell=True)#split bams by reference
-                    os.remove(bam_path + uniq_file)
-                else:
-                    subprocess.call(SPLIT % dict(bam=bam_path + bam_file), shell=True)#split bams by reference
+                    bam_file = uniq_file
+                    
+                subprocess.call(SPLIT % dict(bam=bam_path + bam_file), shell=True)#split bams by reference
                 os.remove(bam_path + bam_file)
                 
                 

@@ -13,11 +13,13 @@ from utils.utils import get_sequences, write_sub_fasta, create_dirs
 from mutations import signatures
 from utils.format_xl import save_format_xl
 import pysam
+from openpyxl import load_workbook
+from openpyxl.styles import PatternFill
 SCRIPT_PATH = os.path.dirname(__file__) +'/'
 
 
 
-ul54_reg = (77859, 81588) 	
+ul54_reg = (77858, 81587) 	
 ul97_reg = (141440, 143564)
 
 
@@ -61,8 +63,25 @@ class cmv(general_pipe):
         signatures.run("alignment/reg_UL54.fasta", "", "reports/mutations_UL54.xlsx")
         signatures.run("alignment/reg_UL97.fasta", "", "reports/mutations_UL97.xlsx")
         
+
+    def split_deletion(self, row):
+        aa_change = row['aa_change']
+        if 'del' in aa_change:
+            positions = aa_change[3:].split('-')
+            
+            # Handle cases like "del413" by converting to "413-"
+            if len(positions) == 1:
+                return pd.DataFrame({**row.to_dict(), 'aa_change': [f"{positions[0]}-"]})
+            
+            # Handle cases like "del413-414"
+            if len(positions) == 2:
+                start, end = map(int, positions)
+                return pd.DataFrame({**row.to_dict(), 'aa_change': [f"{pos}-" for pos in range(start, end + 1)]})
         
-        
+        # Return the entire row unchanged for non-deletions
+        return pd.DataFrame([row])
+
+
     def resist_poly_reports(self):
         '''
         use the mutations table to generate resistant and polymorphism reports
@@ -76,8 +95,9 @@ class cmv(general_pipe):
         # load mutations database
         resist = pd.read_csv(SCRIPT_PATH + "refs/herpesdrg-db.tsv", sep='\t').rename(columns=({"gene": "gene_name"}))
         resist = resist[resist["virus"] == 'HCMV']
-        resist = resist[~resist['aa_change'].str.contains('del')] #temp
-        resist['aa_position_on_gene'] = resist['aa_change'].str[1:-1].astype(str)
+        resist = pd.concat(resist.apply(lambda row: self.split_deletion(row), axis=1).to_list(), ignore_index=True)
+
+        resist['aa_position_on_gene'] = resist['aa_change'].apply(lambda x: x[1:-1] if '-' not in x else x[:-1])
         
         #open mutation tables for each gene
         mut_tbl_UL54 = pd.read_excel("reports/mutations_UL54.xlsx")
@@ -98,11 +118,41 @@ class cmv(general_pipe):
         save_format_xl(merged, seq_num, "reports/mutations.xlsx")
 
         #remove script temp files:
-        os.remove("reports/mutations_UL54.xlsx")
-        os.remove("reports/mutations_UL97.xlsx")
+        # os.remove("reports/mutations_UL54.xlsx")
+        # os.remove("reports/mutations_UL97.xlsx")
 
 
-
+    def excel_colors(self, df):
+        # Save to Excel first
+        excel_path = 'reports/summary.xlsx'
+        df.to_excel(excel_path, index=False)
+        
+        # Now open it with openpyxl and color rows
+        wb = load_workbook(excel_path)
+        ws = wb.active
+        
+        # Color setup
+        white_fill = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+        gray_fill = PatternFill(start_color="DDDDDD", end_color="DDDDDD", fill_type="solid")
+        
+        # Track and alternate color per sample
+        current_sample = None
+        use_gray = False
+        for row_idx in range(2, ws.max_row + 1):  # start from row 2 (row 1 is header)
+            sample_value = ws.cell(row=row_idx, column=1).value
+            if sample_value != current_sample:
+                use_gray = not use_gray
+                current_sample = sample_value
+        
+            fill = gray_fill if use_gray else white_fill
+        
+            for col_idx in range(1, ws.max_column + 1):
+                ws.cell(row=row_idx, column=col_idx).fill = fill
+        
+        # Save the modified Excel
+        wb.save(excel_path)
+    
+    
     def resist_poly_summary(self):
         samples = list(self.sample_fq_dict.keys())
         drugs = ['Ganciclovir','Aciclovir', 'Cidofovir', 'Foscarnet', 'Brincidofovir',
@@ -126,13 +176,14 @@ class cmv(general_pipe):
                         for drug in relevant_drugs:    
                             drugs_sum.loc[len(drugs_sum)] = [sample, gene, mutation, drug, row[drug]]
 
-        poly_df = drugs_sum[drugs_sum["notes"] == "Polymorphism"].drop(columns=["drugs","notes"]).drop_duplicates().sort_values(by=['sample'])
-        resist_df = drugs_sum[drugs_sum["notes"] != "Polymorphism"].drop_duplicates().sort_values(by=['sample'])
+        # poly_df = drugs_sum[drugs_sum["notes"] == "Polymorphism"].drop(columns=["drugs","notes"]).drop_duplicates().sort_values(by=['sample'])
+        # resist_df = drugs_sum[drugs_sum["notes"] != "Polymorphism"].drop_duplicates().sort_values(by=['sample'])
         
-        poly_df.to_excel("reports/polymorphism_summary.xlsx", index=False)
-        resist_df.to_excel("reports/resist_summary.xlsx", index=False)
-        
-        
+        # poly_df.to_excel("reports/polymorphism_summary.xlsx", index=False)
+        # resist_df.to_excel("reports/resist_summary.xlsx", index=False)
+        drugs_sum.to_excel("reports/summary.xlsx", index=False)
+        drugs_sum = drugs_sum.drop_duplicates().sort_values(by=['sample','notes'])
+        self.excel_colors(drugs_sum)
         
         
     #override report

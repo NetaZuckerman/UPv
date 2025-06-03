@@ -23,6 +23,8 @@ from utils.utils import get_sequences, write_sub_fasta, create_dirs
 from mutations import signatures
 from utils.format_xl import save_format_xl
 import pysam
+from openpyxl import load_workbook
+from openpyxl.styles import PatternFill
 
 SCRIPT_PATH = os.path.dirname(__file__) +'/'
 
@@ -127,6 +129,35 @@ class hsv(general_pipe):
         os.remove("reports/mutations_UL30.xlsx")
         os.remove("reports/mutations_UL42.xlsx")            
     
+    def excel_colors(self, df):
+        # Save to Excel first
+        excel_path = 'reports/summary.xlsx'
+        df.to_excel(excel_path, index=False)
+        
+        # Now open it with openpyxl and color rows
+        wb = load_workbook(excel_path)
+        ws = wb.active
+        
+        # Color setup
+        white_fill = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+        gray_fill = PatternFill(start_color="DDDDDD", end_color="DDDDDD", fill_type="solid")
+        
+        # Track and alternate color per sample
+        current_sample = None
+        use_gray = False
+        for row_idx in range(2, ws.max_row + 1):  # start from row 2 (row 1 is header)
+            sample_value = ws.cell(row=row_idx, column=1).value
+            if sample_value != current_sample:
+                use_gray = not use_gray
+                current_sample = sample_value
+        
+            fill = gray_fill if use_gray else white_fill
+        
+            for col_idx in range(1, ws.max_column + 1):
+                ws.cell(row=row_idx, column=col_idx).fill = fill
+        
+        # Save the modified Excel
+        wb.save(excel_path)
     
     def resist_poly_summary(self):
         samples = list(self.sample_fq_dict.keys())
@@ -151,11 +182,11 @@ class hsv(general_pipe):
                         for drug in relevant_drugs:    
                             drugs_sum.loc[len(drugs_sum)] = [sample, gene, mutation, drug, row[drug]]
 
-        poly_df = drugs_sum[drugs_sum["notes"] == "Polymorphism"].drop(columns=["drugs","notes"]).drop_duplicates().sort_values(by=['sample'])
-        resist_df = drugs_sum[drugs_sum["notes"] != "Polymorphism"].drop_duplicates().sort_values(by=['sample'])
+
+        drugs_sum.loc[drugs_sum["notes"] == "Polymorphism","drugs"] = "" 
+        drugs_sum = drugs_sum.drop_duplicates().sort_values(by=['sample','notes'])
         
-        poly_df.to_excel("reports/polymorphism_summary.xlsx", index=False)
-        resist_df.to_excel("reports/resist_summary.xlsx", index=False)
+        self.excel_colors(drugs_sum)
         
         
 #override report

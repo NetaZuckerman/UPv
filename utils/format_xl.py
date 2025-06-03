@@ -26,15 +26,6 @@ def save_format_xl(df,num_samples,output):
     None. it saves an excel report in reports directory.
 
     '''
-        
-    df["group_change"] = 0
-    for index, row in df.iterrows():
-        if row["R/S"] == "S":
-            continue
-        if row["aa_group"]:
-            aa = row["aa_group"].split(",")
-            if not aa[0].split("(")[0].strip() == aa[1].split("(")[0].strip():
-                df.at[index,'group_change']=1
     
             
     writer = pd.ExcelWriter(output, engine='xlsxwriter')
@@ -53,7 +44,7 @@ def save_format_xl(df,num_samples,output):
     #-------------------------------------------------------------------
     #rules
     worksheet.conditional_format(1,xl_aa_end+2, max_row, xl_aa_end+2, {'type':     'formula',
-                                       'criteria': "=$" + xl_col_to_name(xl_aa_end+4) +"2=1",
+                                       'criteria': "=$" + xl_col_to_name(xl_aa_end+6) +"2=1",
                                        'format':   red_format})
     
     worksheet.conditional_format(0,3, max_row, num_samples + 3, {'type':     'cell',
